@@ -1,0 +1,110 @@
+
+=== S1 container shape: one shared 'firstmate' workspace, one tab per task, adopted across raw/logical/physical paths ===
+task A: terminal=de5b30e0-2887-465f-ba16-3e6606a33296 workspace=wks_c9a816716f93d020 (created from physical /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-proj.25841)
+task B: terminal=50750d51-c749-4225-91d8-65c20e5d98c6 workspace=wks_c9a816716f93d020 (created from logical /var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-proj.25841)
+task C: terminal=b650fd01-8dd6-4699-948b-78a31f7f49ae workspace=wks_c9a816716f93d020 (created from raw /var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T//fm-paseo-live-proj.25841)
+PASS - three tasks share ONE workspace across physical/logical/doubled-slash paths
+--- paseo workspace ls (this project) ---
+{"workspaceId":"wks_c9a816716f93d020","name":"firstmate","cwd":"/private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-proj.25841"}
+PASS - exactly one workspace for the project, titled 'firstmate'
+--- paseo terminal ls (workspace wks_c9a816716f93d020) ---
+{"id":"de5b30e0-2887-465f-ba16-3e6606a33296","name":"fm-firstmate-6d0aaf34-livea","workspaceId":"wks_c9a816716f93d020"}
+{"id":"50750d51-c749-4225-91d8-65c20e5d98c6","name":"fm-firstmate-6d0aaf34-liveb","workspaceId":"wks_c9a816716f93d020"}
+{"id":"b650fd01-8dd6-4699-948b-78a31f7f49ae","name":"fm-firstmate-6d0aaf34-livec","workspaceId":"wks_c9a816716f93d020"}
+PASS - three task tabs named fm-firstmate-6d0aaf34-<id> in that workspace (total tabs in workspace: 3)
+paseo projects: before=2 after=3 (for this path: 1)
+PASS - Paseo registered exactly one project for the path (no multiplication)
+
+=== S2 fm-peek.sh reads the task tab by task id ===
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+…/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-proj.25841 ❯ echo peek-marker-l
+ivea
+peek-marker-livea
+…/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-proj.25841 ❯
+PASS - fm-peek.sh livea shows the task tab's output
+
+=== S3 fm-send.sh text steer: durable inbox record + doorbell rung into the task tab ===
+fm-send rc=0
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+inbox files:
+/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live.3uYWg9/home/state/livea.inbox/001.msg
+--- tab tail after send ---
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+: Firstmate instruction waiting: list '/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0
+000gn/T/fm-paseo-live.3uYWg9/home/state/livea.inbox'/*.msg and, in numeric order
+, read and act on each, then mv each handled file to '/var/folders/dk/gjs9w08x5t
+1gnzcr76mr2yrh0000gn/T/fm-paseo-live.3uYWg9/home/state/livea.inbox'/handled/.
+: Firstmate instruction waiting: list '/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0
+000gn/T/fm-paseo-live.3uYWg9/home/state/livea.inbox'/*.msg and, in numeric order
+, read and act on each, then mv each handled file to '/var/folders/dk/gjs9w08x5t
+1gnzcr76mr2yrh0000gn/T/fm-paseo-live.3uYWg9/home/state/livea.inbox'/handled/.
+PASS - fm-send.sh recorded the steer durably (rc=0)
+PASS - doorbell line landed in the Paseo tab
+
+=== S4 C-u clears the line (raw 0x15), never typed as literal 'C-u' text (fm-control.sh interrupt, harness muse = Escape + C-u) ===
+fm-control.sh liveb interrupt rc=0: interrupt-delivered liveb harness=muse backend=paseo verified=endpoint cancel=unconfirmed
+--- tab tail (cat -v echoes what the tty line discipline delivered) ---
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+…/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-proj.25841 ❯ cat -v
+NEXT-STEER
+NEXT-STEER
+PASS - fm-control.sh interrupt succeeded on paseo for a muse task
+PASS - the restored prompt was cleared: cat received only NEXT-STEER, no literal 'C-u'
+
+=== S5 fm-send.sh --key Escape on a muse task also clears with C-u ===
+fm-send.sh liveb --key Escape rc=0 WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+…/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-proj.25841 ❯ cat -v
+NEXT-STEER
+NEXT-STEER
+SECOND-STEER
+SECOND-STEER
+PASS - fm-send --key Escape + auto C-u cleared the composer
+
+=== S6 adversarial: an unsupported key is refused, not typed as text ===
+fm-send.sh liveb --key F5 rc=1: WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: unsupported paseo key 'F5' (paseo would type it as literal text)
+error: key 'F5' not sent to 50750d51-c749-4225-91d8-65c20e5d98c6:wks_c9a816716f93d020 (paseo send failed; tried meta=/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live.3uYWg9/home/state/liveb.meta; backend=from-meta)
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+SECOND-STEER
+SECOND-STEER
+AFTER-F5
+AFTER-F5
+PASS - F5 refused loudly (rc=1) and nothing literal reached the tab
+
+=== S7 fm-control.sh interrupt on a claude task (Escape) succeeds on paseo ===
+rc=0: interrupt-delivered livea harness=claude backend=paseo verified=endpoint cancel=unconfirmed
+PASS - claude interrupt delivered on paseo
+
+=== S8 routing authority: stale recorded terminal id recovers by NAME; a reused id under the wrong name is refused ===
+fm-peek.sh livec (meta records bogus id) rc=0
+…/T//fm-paseo-live-proj.25841 ❯ echo recovered-by-name-livec
+recovered-by-name-livec
+…/T//fm-paseo-live-proj.25841 ❯
+PASS - stale terminal id recovered by home-scoped terminal NAME
+fm-send.sh imposter --key Enter rc=1: WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: key 'Enter' not sent to de5b30e0-2887-465f-ba16-3e6606a33296:wks_c9a816716f93d020 (paseo send failed; tried meta=/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live.3uYWg9/home/state/imposter.meta; backend=from-meta)
+fm-peek.sh imposter rc=1
+PASS - a live terminal id recorded under another task's name is never targeted
+
+=== S9 kill closes only the task tab; sibling tabs and the shared workspace survive ===
+PASS - task A tab closed; B and C tabs and workspace wks_c9a816716f93d020 alive
+PASS - second kill of a gone tab stays best-effort (rc=0)
+archive calls issued by the adapter: 0
+
+=== S10 the adapter never ran a 'paseo project' command ===
+--- distinct paseo subcommands issued during the run ---
+   1 -v 
+   1 status --json
+   8 terminal capture
+   3 terminal create
+   1 terminal kill
+  45 terminal ls
+  25 terminal send-keys
+   1 workspace create
+   3 workspace ls
+PASS - zero 'paseo project' invocations across 88 paseo calls
+PASS - adapter never archived the shared workspace
+
+RESULT: 18 passed, 0 failed

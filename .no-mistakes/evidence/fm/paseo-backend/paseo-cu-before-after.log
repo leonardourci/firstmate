@@ -1,0 +1,12 @@
+### BEFORE (45c122f adapter)
+send_key C-u rc=0
+--- before: tab tail ---
+…/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-cu.hXYyNF ❯ cat -v
+OLD-PROMPTC-uNEXT
+OLD-PROMPTC-uNEXT
+### AFTER (7d7c626 adapter, this change)
+send_key C-u rc=0
+--- after: tab tail ---
+…/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-cu.hXYyNF ❯ cat -v
+NEXT
+NEXT

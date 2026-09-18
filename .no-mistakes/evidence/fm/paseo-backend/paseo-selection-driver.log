@@ -1,0 +1,58 @@
+=== S11 backend selection and auto-detection (fm_backend_name) ===
+  no markers, no config                                      -> tmux   
+PASS - no markers, no config resolves tmux
+PASS - default tmux prints no notice
+  FM_BACKEND=paseo                                           -> paseo  
+PASS - FM_BACKEND=paseo resolves paseo
+  config/backend=paseo                                       -> paseo  
+PASS - config/backend=paseo resolves paseo
+  PASEO_AGENT_ID set (auto-detect)                           -> paseo  [stderr] NOTICE: auto-detected paseo runtime (PASEO_AGENT_ID) - spawning into the EXPERIMENTAL paseo backend. Set config/backend or pass --backend tmux to opt out.
+PASS - PASEO_AGENT_ID set (auto-detect) resolves paseo
+PASS - PASEO_AGENT_ID auto-detect prints the EXPERIMENTAL notice
+  __CFBundleIdentifier=sh.paseo.desktop only (fallback)      -> paseo  [stderr] NOTICE: auto-detected paseo runtime (FALLBACK signal __CFBundleIdentifier=sh.paseo.desktop; PASEO_AGENT_ID absent, stripped by a wrapper) - spawning into the EXPERIMENTAL paseo backend. Set config/backend or pass --backend tmux to opt out.
+PASS - __CFBundleIdentifier=sh.paseo.desktop only (fallback) resolves paseo
+PASS - bundle-id fallback names the fallback signal
+  TMUX + PASEO_AGENT_ID (inner multiplexer wins)             -> tmux   
+PASS - TMUX + PASEO_AGENT_ID (inner multiplexer wins) resolves tmux
+  HERDR_ENV=1 + PASEO_AGENT_ID                               -> herdr  [stderr] NOTICE: auto-detected herdr runtime (HERDR_ENV=1) - spawning into the EXPERIMENTAL herdr backend. Set config/backend or pass --backend tmux to opt out.
+PASS - HERDR_ENV=1 + PASEO_AGENT_ID resolves herdr
+  auto-detected paseo, kind=secondmate                       -> tmux   
+PASS - auto-detected paseo, kind=secondmate resolves tmux
+  explicit FM_BACKEND=paseo, kind=secondmate                 -> paseo  
+PASS - explicit FM_BACKEND=paseo, kind=secondmate resolves paseo
+  config/backend=paseo, kind=secondmate                      -> paseo  
+PASS - config/backend=paseo, kind=secondmate resolves paseo
+
+=== S12 real bin/fm-spawn.sh --secondmate: explicit paseo refused, auto-detected paseo falls back ===
+  [--backend paseo] rc=1: error: backend=paseo does not support --secondmate spawns yet
+PASS - --backend paseo --secondmate refused
+  [FM_BACKEND=paseo] rc=1: error: backend=paseo does not support --secondmate spawns yet
+PASS - FM_BACKEND=paseo --secondmate refused
+  [config/backend=paseo] rc=1: error: backend=paseo does not support --secondmate spawns yet
+PASS - config/backend=paseo --secondmate refused
+  [auto-detected PASEO_AGENT_ID] rc=1:
+    error: no firstmate home supplied or registered for sm-paseo-live
+PASS - auto-detected paseo does not refuse --secondmate (continues past backend selection on tmux)
+PASS - no paseo notice for the tmux-fallback secondmate spawn
+
+=== S13 real bin/fm-bootstrap.sh with backend=paseo and the paseo CLI absent ===
+    MISSING_MANUAL: paseo (instructions: https://paseo.sh)
+    MISSING: treehouse (install: curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh)
+    MISSING: node (install: brew install node  # or the platform's package manager)
+    MISSING: gh (install: brew install gh  # or the platform's package manager)
+    MISSING: no-mistakes (install: curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh)
+    MISSING: gh-axi (install: npm install -g gh-axi && gh-axi setup hooks)
+    MISSING: chrome-devtools-axi (install: npm install -g chrome-devtools-axi && chrome-devtools-axi setup hooks)
+    MISSING: tasks-axi (install: npm install -g tasks-axi)
+    MISSING: quota-axi (install: npm install -g quota-axi)
+PASS - bootstrap reports MISSING_MANUAL for paseo with the https://paseo.sh hint
+PASS - no empty 'install: ' hint
+PASS - bootstrap does not demand tmux for backend=paseo
+PASS - with the real paseo CLI on PATH bootstrap reports no missing paseo
+
+=== S14 bin/fm-test-run.sh knows the paseo family ===
+PASS - --list-families lists paseo
+    tests/fm-backend-paseo-smoke.test.sh
+    tests/fm-backend-paseo.test.sh
+
+RESULT: 23 passed, 0 failed
