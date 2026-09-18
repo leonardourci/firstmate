@@ -1,0 +1,24 @@
+…/T//fm-paseo-live-P.8gRbrh ❯ bash '/Users/leonardourci/.no-mistakes/evidence/01
+M2TBJ3CYN9WSNW4NAP8NWHXN/r2-inside-paseo-tab.sh' '/Users/leonardourci/.no-mistak
+es/worktrees/6e55bfafc110/01M2TBJ3CYN9WSNW4NAP8NWHXN' '/var/folders/dk/gjs9w08x5
+t1gnzcr76mr2yrh0000gn/T//fm-paseo-live-P.8gRbrh' '/var/folders/dk/gjs9w08x5t1gnz
+cr76mr2yrh0000gn/T//fm-paseo-live-Q.rajsqw' 'wks_a6ccc37288844df5' > '/Users/leo
+nardourci/.no-mistakes/evidence/01M2TBJ3CYN9WSNW4NAP8NWHXN/r2-inside-paseo-tab.l
+og' 2>&1; tail -1 '/Users/leonardourci/.no-mistakes/evidence/01M2TBJ3CYN9WSNW4NA
+P8NWHXN/r2-inside-paseo-tab.log'
+DRIVER-DONE after 9s
+…/T//fm-paseo-live-P.8gRbrh ❯
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,34 @@
+target commit: 572b4eb
+projects before: ["/Users/leonardourci/granted/medbillai","/Users/leonardourci/projects/off-finance"]
+P=/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T//fm-paseo-live-P.8gRbrh  (logical /var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-P.8gRbrh)
+Q=/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T//fm-paseo-live-Q.rajsqw
+own (human-titled) workspace for P: wks_c6bbbe45a4ebc9ff
+competing 'firstmate'-titled workspace for P: wks_a6ccc37288844df5
+captain tab terminal: 7a3c9a1d-2cd6-428d-b393-3355168a25e0
+in-tab driver elapsed: 16s
+
+== S7 (outer shell, no PASEO_* markers) explicit paseo without PASEO_WORKSPACE_ID adopts the 'firstmate'-titled workspace ==
+create_task -> [c3bbed14-24a5-4754-ac5d-f92c118b7263 wks_a6ccc37288844df5] (expected workspace wks_a6ccc37288844df5)
+S7 RESULT: PASS
+
+== S8 C-u clears the line in a real Paseo task tab (raw 0x15); an untokenized key is refused ==
+send_key C-u rc=0
+error: unsupported paseo key 'C-x' (paseo would type it as literal text)
+send_key C-x rc=1
+-- capture of task tab a7ed0044-6902-49d2-bbf9-80b92bab6a16 --
+…/T//fm-paseo-live-P.8gRbrh ❯ echo cu-cleared-ok
+cu-cleared-ok
+…/T//fm-paseo-live-P.8gRbrh ❯-- end capture --
+S8 RESULT: PASS
+
+== Paseo's own view after the run ==
+[{"workspaceId":"wks_0d9938c5b1aa2f9c","name":"firstmate","cwd":"/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-Q.rajsqw"},{"workspaceId":"wks_a6ccc37288844df5","name":"firstmate","cwd":"/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-P.8gRbrh"},{"workspaceId":"wks_c6bbbe45a4ebc9ff","name":"fm-test captain tab","cwd":"/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-P.8gRbrh"}]
+terminals in those workspaces:
+{"id":"7a3c9a1d-2cd6-428d-b393-3355168a25e0","name":"fm-test-captain","workspaceId":"wks_c6bbbe45a4ebc9ff"}
+{"id":"a7ed0044-6902-49d2-bbf9-80b92bab6a16","name":"fm-firstmate-b3d0d16b-test-own","workspaceId":"wks_c6bbbe45a4ebc9ff"}
+{"id":"59592f00-d566-4913-ad9f-6a656a7e92d3","name":"fm-firstmate-b3d0d16b-test-stale","workspaceId":"wks_a6ccc37288844df5"}
+{"id":"c3bbed14-24a5-4754-ac5d-f92c118b7263","name":"fm-firstmate-b3d0d16b-test-outer","workspaceId":"wks_a6ccc37288844df5"}
+{"id":"d285905c-54c5-4de3-8ae9-75f894a5ea5c","name":"fm-firstmate-b3d0d16b-test-other","workspaceId":"wks_0d9938c5b1aa2f9c"}
+projects during: ["/Users/leonardourci/granted/medbillai","/Users/leonardourci/projects/off-finance","/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-P.8gRbrh","/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-Q.rajsqw"]
+projects after cleanup: ["/Users/leonardourci/granted/medbillai","/Users/leonardourci/projects/off-finance"]
+leftover fm-test terminals: []

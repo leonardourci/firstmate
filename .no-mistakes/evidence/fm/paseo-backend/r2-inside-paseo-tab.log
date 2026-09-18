@@ -1,0 +1,54 @@
+== markers Paseo exported into this tab ==
+PASEO_ACTIVITY_TOKEN=<redacted>
+PASEO_CLI=/Applications/Paseo.app/Contents/Resources/bin/paseo
+PASEO_HOOK_CLI=/Applications/Paseo.app/Contents/Resources/bin/paseo
+PASEO_TERMINAL_ACTIVITY_URL=http://127.0.0.1:6767/api/terminal-activity
+PASEO_TERMINAL_ID=7a3c9a1d-2cd6-428d-b393-3355168a25e0
+PASEO_WEB_UI_ENABLED=false
+PASEO_WORKSPACE_ID=wks_c6bbbe45a4ebc9ff
+PASEO_ZSH_ZDOTDIR=
+__CFBundleIdentifier=sh.paseo.desktop
+PASEO_AGENT_ID is UNSET
+
+== S1 detection ignores real Paseo tab markers ==
+fm_backend_detect rc=1 out=[]
+fm_backend_name=[tmux] stderr=[]
+-- same tab + agent marker (PASEO_AGENT_ID=fm-test-agent, as a Paseo agent exports) --
+fm_backend_detect rc=1 out=[]
+fm_backend_name=[tmux] stderr=[]
+-- same tab + TMUX set (simulated: tmux not installed on this host) --
+fm_backend_detect=[tmux]
+
+== S2 explicit selection still selects paseo ==
+FM_BACKEND=paseo -> [paseo]
+config/backend=paseo -> [paseo]
+
+== S3 fm-spawn.sh --secondmate inside the real Paseo tab ==
+-- unconfigured home (nothing selects paseo) --
+error: no firstmate home supplied or registered for sm-paseo-live
+   exit=1
+-- unconfigured home + PASEO_AGENT_ID --
+error: no firstmate home supplied or registered for sm-paseo-live
+   exit=1
+-- --backend paseo --
+error: backend=paseo does not support --secondmate spawns yet
+   exit=1
+-- FM_BACKEND=paseo --
+error: backend=paseo does not support --secondmate spawns yet
+   exit=1
+-- config/backend=paseo --
+error: backend=paseo does not support --secondmate spawns yet
+   exit=1
+
+== S4 explicit paseo adopts the tab's own workspace (PASEO_WORKSPACE_ID=wks_c6bbbe45a4ebc9ff) ahead of the 'firstmate'-titled wks_a6ccc37288844df5 ==
+create_task -> [a7ed0044-6902-49d2-bbf9-80b92bab6a16 wks_c6bbbe45a4ebc9ff]
+CREATED_OWN=a7ed0044-6902-49d2-bbf9-80b92bab6a16 wks_c6bbbe45a4ebc9ff
+
+== S5 own workspace belongs to P; a task for other project Q must NOT land in it ==
+create_task -> [d285905c-54c5-4de3-8ae9-75f894a5ea5c wks_0d9938c5b1aa2f9c]
+CREATED_OTHER=d285905c-54c5-4de3-8ae9-75f894a5ea5c wks_0d9938c5b1aa2f9c
+
+== S6 stale PASEO_WORKSPACE_ID falls back to the 'firstmate' title lookup ==
+create_task -> [59592f00-d566-4913-ad9f-6a656a7e92d3 wks_a6ccc37288844df5]
+CREATED_STALE=59592f00-d566-4913-ad9f-6a656a7e92d3 wks_a6ccc37288844df5
+DRIVER-DONE after 9s

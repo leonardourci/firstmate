@@ -1,0 +1,18 @@
+projects before: ["/Users/leonardourci/granted/medbillai","/Users/leonardourci/projects/off-finance"]
+P=/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T//fm-paseo-live-P.0Tu176  (logical /var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-P.0Tu176)
+Q=/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T//fm-paseo-live-Q.4UBYml
+own (human-titled) workspace for P: wks_c0d56fbef9768e34
+competing 'firstmate'-titled workspace for P: wks_12d63cf8fe4e2fb8
+captain tab terminal: b0987d79-fdbc-4611-8fc3-d05f0b3eec80
+in-tab driver elapsed: 13s
+
+== Paseo's own view after the run ==
+[{"workspaceId":"wks_12d63cf8fe4e2fb8","name":"firstmate","cwd":"/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-P.0Tu176"},{"workspaceId":"wks_2d1369af7cbb3193","name":"firstmate","cwd":"/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-Q.4UBYml"},{"workspaceId":"wks_c0d56fbef9768e34","name":"fm-test captain tab","cwd":"/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-P.0Tu176"}]
+terminals in those workspaces:
+{"id":"b0987d79-fdbc-4611-8fc3-d05f0b3eec80","name":"fm-test-captain","workspaceId":"wks_c0d56fbef9768e34"}
+{"id":"2824d716-507b-4294-aa70-695f78d235c3","name":"fm-firstmate-b3d0d16b-test-own","workspaceId":"wks_c0d56fbef9768e34"}
+{"id":"b337df4b-1a80-4b49-84fb-d9befb5b0d21","name":"fm-firstmate-b3d0d16b-test-stale","workspaceId":"wks_12d63cf8fe4e2fb8"}
+{"id":"495c8616-db90-4147-8eca-e52be45fd0c3","name":"fm-firstmate-b3d0d16b-test-other","workspaceId":"wks_2d1369af7cbb3193"}
+projects during: ["/Users/leonardourci/granted/medbillai","/Users/leonardourci/projects/off-finance","/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-P.0Tu176","/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-live-Q.4UBYml"]
+projects after cleanup: ["/Users/leonardourci/granted/medbillai","/Users/leonardourci/projects/off-finance"]
+leftover fm-test terminals: []

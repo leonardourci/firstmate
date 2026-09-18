@@ -1,0 +1,16 @@
+projects before: ["/Users/leonardourci/granted/medbillai","/Users/leonardourci/projects/off-finance"]
+ok - real paseo: create_task creates a terminal/workspace and refuses a duplicate name
+ok - real paseo: the task tab lives in the project's shared 'firstmate' workspace
+ok - real paseo: expected task label verification accepts the matching terminal and rejects a mismatch
+ok - real paseo: send_literal (unsubmitted) + send_key Enter submit as two steps and the output is capturable
+ok - real paseo: send_text_line composes send-keys+Enter and its output is capturable
+ok - real paseo: current_path reads the terminal's live cwd after a direct cd
+ok - real paseo: current_path tracks a NESTED SUBSHELL's own cd (the treehouse-get-shaped case a bare cwd read cannot see)
+ok - real paseo: send_key Escape (natively supported) succeeds
+ok - real paseo: send_key C-c (the verified 'C-c' token) succeeds
+ok - real paseo: fm_backend_busy_state reports unknown (watcher falls back to capture/hash polling)
+ok - real paseo: a second task on the same project is a sibling tab in the same workspace and registers no new project
+ok - real paseo: kill closes only the task's tab, leaves the sibling tab and the shared workspace alive, and is idempotent/best-effort
+ok - real paseo: list_live discovers a live task terminal by fm-<id> name
+rc=0
+projects after: ["/Users/leonardourci/granted/medbillai","/Users/leonardourci/projects/off-finance"]
