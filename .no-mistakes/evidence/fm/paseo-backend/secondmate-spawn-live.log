@@ -1,0 +1,12 @@
+$ fm-spawn.sh sm-x --secondmate --backend paseo
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+rc=3
+$ FM_BACKEND=paseo fm-spawn.sh sm-x --secondmate
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+rc=3
+$ (config/backend=paseo) fm-spawn.sh sm-x --secondmate
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+rc=3
+$ (unconfigured, inside Paseo markers) fm-spawn.sh sm-x --secondmate
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+rc=3

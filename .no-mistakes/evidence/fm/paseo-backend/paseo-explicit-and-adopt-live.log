@@ -1,0 +1,17 @@
+== S1 ambient Paseo markers, no config -> tmux, silent
+backend=tmux stderr=[]
+backend=tmux stderr=[]
+backend=tmux stderr=[]
+== S2 explicit selection -> paseo
+backend=paseo stderr=[]
+backend=paseo stderr=[]
+== S3 own workspace adopted (human-titled, same cwd) ahead of title lookup
+own workspace created: wks_4d23ac36ea21bac9 (title 'Evidence Room', cwd /var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-own.1pbJbU)
+create_task -> 5796b3e1-c232-41d5-ace8-4638f0d469f6 wks_4d23ac36ea21bac9
+PASS S3: task tab adopted PASEO_WORKSPACE_ID workspace
+[{"workspaceId":"wks_4d23ac36ea21bac9","name":"Evidence Room","cwd":"/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-own.1pbJbU"}]
+== S4 PASEO_WORKSPACE_ID of ANOTHER project is ignored
+create_task -> 04d0bd8f-bfe7-4caf-a025-5cddd5a2a5a3 wks_e4c96fe7af9d2d7e
+chosen workspace: wks_e4c96fe7af9d2d7e -> firstmate /var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-oth.Tfr0at
+PASS S4: new 'firstmate' workspace for other project
+cleanup: leftover projects for our dirs = 0
