@@ -1,0 +1,9 @@
+$ FM_HOME=<lab> bin/fm-spawn.sh sm1 --harness claude --backend paseo --secondmate
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo.dI6fqV/home
+error: backend=paseo does not support --secondmate spawns yet
+rc=1
+
+$ FM_BACKEND=paseo FM_HOME=<lab> bin/fm-spawn.sh sm2 --harness claude --secondmate
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo.dI6fqV/home
+error: backend=paseo does not support --secondmate spawns yet
+rc=1

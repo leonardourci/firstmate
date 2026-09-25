@@ -1,0 +1,13 @@
+### BEFORE fix (bin/ from e612fbd0, the merge commit before 94410513)
+fm_backend_source paseo FAILED rc=1
+fm-peek rc=1
+
+### AFTER fix (worktree HEAD 94410513)
+tmux loaded rc=0
+herdr loaded rc=0
+zellij loaded rc=0
+orca loaded rc=0
+cmux loaded rc=0
+paseo loaded rc=0
+error: unknown backend 'bogus' (known: tmux herdr zellij orca cmux paseo)
+bogus rc=1 (must be non-zero)

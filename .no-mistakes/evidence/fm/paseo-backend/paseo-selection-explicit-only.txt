@@ -1,0 +1,6 @@
+no markers, no config                                                          -> tmux
+PASEO_AGENT_ID=agent-1 (inherited Paseo marker)                                -> tmux
+__CFBundleIdentifier=sh.paseo.desktop                                          -> tmux
+PASEO_AGENT_ID + sh.paseo.desktop + PASEO_HOME                                 -> tmux
+explicit FM_BACKEND=paseo                                                      -> paseo
+config/backend=paseo                                                           -> paseo

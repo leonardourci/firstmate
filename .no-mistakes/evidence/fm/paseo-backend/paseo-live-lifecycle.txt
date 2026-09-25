@@ -1,0 +1,39 @@
+== fm_backend_source paseo
+loaded: rc=0
+== paseo version/daemon
+version-ok
+daemon-ok
+== created terminal=17ce0b4a-b70e-4b9a-bb3d-9c984d4b87b0 workspace=wks_43140cf185b3ec37
+== second task in same workspace
+terminal2=48f0f71c-d099-4ec5-87cd-3e4073e75723 workspace2=wks_43140cf185b3ec37 same_ws=yes
+== duplicate name refused
+error: paseo terminal 'fm-firstmate-f68d0a12-livetask' already exists
+dup rc=1
+== bin/fm-send.sh livetask
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo.dI6fqV/home
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+send rc=0
+== bin/fm-peek.sh livetask 15
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+…/T/fm-paseo.dI6fqV/proj  main ❯ : Firstmate instruction waiting: list '/var/fol
+ders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo.dI6fqV/home/state/livetask.inb
+ox'/*.msg and, in numeric order, read and act on each, then mv each handled file
+ to '/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo.dI6fqV/home/state
+/livetask.inbox'/handled/.
+…/T/fm-paseo.dI6fqV/proj  main ❯peek rc=0
+== target_exists
+exists
+== kill task 1
+kill rc=0
+== after kill: task1 exists?
+gone
+== sibling task2 exists?
+sibling-alive
+== workspaces
+{"id":null,"name":"firstmate"}

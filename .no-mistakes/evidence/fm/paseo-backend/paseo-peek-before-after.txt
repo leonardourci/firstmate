@@ -1,0 +1,12 @@
+### state/peektask.meta
+backend=paseo
+window=f4ae00d6-d5e2-4782-aac3-caee2dd1dda1:wks_43140cf185b3ec37
+endpoint_task_id=peektask
+project=/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo.dI6fqV/proj
+worktree=/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo.dI6fqV/proj
+### bin/fm-peek.sh peektask 30 against live Paseo tab - BEFORE fix (bin/ from e612fbd0)
+rc=1
+### same command - AFTER fix (94410513)
+…/T/fm-paseo.dI6fqV/proj  main ❯ echo PEEK_MARKER_$((40+2))
+PEEK_MARKER_42
+…/T/fm-paseo.dI6fqV/proj  main ❯rc=0
