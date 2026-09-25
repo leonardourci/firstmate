@@ -1,0 +1,32 @@
+$ FM_STATE_OVERRIDE=<state> node bin/fm-branch-dispatch.mjs scope   # A: paseo task meta + stale wake keyed by its window
+status=safe
+corrupted=0
+rows=1
+tasks=paseo-task
+unscoped=0
+rc=0
+
+$ FM_STATE_OVERRIDE=<state> node bin/fm-branch-dispatch.mjs scope   # B (adversarial): same stale wake, no task meta
+status=unsafe
+corrupted=1
+rows=
+tasks=
+unscoped=0
+rc=0
+
+$ FM_STATE_OVERRIDE=<state> node bin/fm-branch-dispatch.mjs scope   # C (adversarial): meta window differs (other terminal, same workspace)
+status=unsafe
+corrupted=1
+rows=
+tasks=
+unscoped=0
+rc=0
+
+$ FM_STATE_OVERRIDE=<state> node bin/fm-branch-dispatch.mjs scope   # D (adversarial): wake keyed by bare terminal uuid only
+status=unsafe
+corrupted=1
+rows=
+tasks=
+unscoped=0
+rc=0
+
