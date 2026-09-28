@@ -1,0 +1,16 @@
+== 1. ambient Paseo markers only (PASEO_AGENT_ID + __CFBundleIdentifier=sh.paseo.desktop), nothing configured
+backend=tmux
+== 2. FM_BACKEND=paseo
+backend=paseo
+== 3. config/backend=paseo
+backend=paseo
+== 4. no markers, nothing configured (default)
+backend=tmux
+== 5. fm-spawn --secondmate --backend paseo
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T//fm-lab.7obmzy
+error: backend=paseo does not support --secondmate spawns yet
+rc=1
+== 6. fm-spawn --secondmate with FM_BACKEND=paseo
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T//fm-lab.7obmzy
+error: backend=paseo does not support --secondmate spawns yet
+rc=1
