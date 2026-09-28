@@ -1,0 +1,22 @@
+== FAULT=ws-fail: rc=1
+   stderr/out: error: could not read the paseo workspace inventory; refusing to create a workspace for '/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-guard.xsdxM8'
+   before: workspaces=5 terminals=0 projects=3
+   after:  workspaces=5 terminals=0 projects=3
+   PASS refused, nothing created
+== FAULT=ws-garbage: rc=1
+   stderr/out: error: could not read the paseo workspace inventory; refusing to create a workspace for '/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-guard.xsdxM8'
+   before: workspaces=5 terminals=0 projects=3
+   after:  workspaces=5 terminals=0 projects=3
+   PASS refused, nothing created
+== seed task created: terminal=32d349a1-c389-4665-aa9f-493d4154b214 workspace=wks_bcdf9d9a5e70058f
+== FAULT=term-fail: rc=1
+   stderr/out: error: could not read the paseo terminal inventory; refusing to create 'fm-firstmate-0d9ec2c4-test-guard-term'
+   before: workspaces=6 terminals=1 projects=4
+   after:  workspaces=6 terminals=1 projects=4
+   PASS refused, nothing created
+== control (no fault): created terminal=8bed1fa4-d5a0-4cd6-8566-15a886376f13 in same workspace wks_bcdf9d9a5e70058f PASS
+== quiet-terminal capture (seed tab, nothing typed), last 20 lines:
+   | …/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-guard.xsdxM8 ❯
+   PASS non-empty
+RESULT rc=0
+after cleanup: workspaces=5 terminals=0 projects=3
