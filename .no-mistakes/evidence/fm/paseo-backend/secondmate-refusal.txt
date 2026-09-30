@@ -1,0 +1,4 @@
+$ fm-spawn.sh --backend paseo --secondmate sm-test
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T//fm-lab.vJfNjD
+error: backend=paseo does not support --secondmate spawns yet
+rc=1

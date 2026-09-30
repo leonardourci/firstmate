@@ -1,0 +1,10 @@
+# 1 Paseo env signals only (PASEO_AGENT_ID + paseo bundle id), no config, no FM_BACKEND
+=> tmux
+# 2 FM_BACKEND=paseo
+=> paseo
+# 3 config/backend=paseo
+=> paseo
+# 4 config/backend=paseo but FM_BACKEND=tmux
+=> tmux
+# 5 nothing set (default)
+=> tmux
