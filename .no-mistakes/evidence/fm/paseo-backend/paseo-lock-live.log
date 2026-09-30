@@ -1,0 +1,31 @@
+lab FM_HOME=/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.lOyWw2 lock=/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.lOyWw2/state/.paseo-workspace.lock paseo=0.10.2
+
+== S1 happy path: spawn in home clone, lock released, last-tab kill retires workspace+project
+created terminal=cd6542d5-1e12-4584-a64f-e5bef3aa52c9 workspace=wks_a5433ba66edfebd1 project=prj_67c44dfe35cf38a3
+PASS - lock released after spawn
+after kill: workspaces=[] projects=[] lock_exists=no
+PASS - workspace archived and clone project deleted
+
+== S2 adversarial: another live process holds the lock -> spawn refuses, creates nothing
+holder pid=6152 owns /var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.lOyWw2/state/.paseo-workspace.lock
+create_task rc=1 after 4s stderr: error: could not take the paseo workspace lock; refusing to create 'fm-firstmate-1bb1b08c-lablock-b'
+state: terminals named fm-lablock-b=[] workspaces=[] projects=[]
+PASS - spawn refused under held lock and created nothing
+
+== S3 adversarial: lock held during cleanup -> retire skips, workspace survives; retire after release archives
+created terminal=7ca94e15-8596-4059-a95d-3cfcf9f2bbad workspace=wks_c24f32d50decca35
+kill rc=0; terminal alive=[] workspaces=[wks_c24f32d50decca35]
+PASS - tab closed, retire skipped under held lock, workspace kept
+after unlocked retire: workspaces=[] projects=[]
+PASS - retire archives once lock is free
+
+== S4 boundary: emptied firstmate workspace outside FM_HOME/projects is never archived
+created terminal=66487b83-5607-4de5-aa3c-fbca495534f8 workspace=wks_b3c27b8efb88f1af (cwd=/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-paseo-outside.F77ZaY)
+after kill: terminal=[] workspaces=[wks_b3c27b8efb88f1af] projects=[prj_12807b56092eb3df]
+PASS - outside-home workspace kept after last tab closed
+
+== S5 concurrency: two spawns racing into the same clone serialize onto ONE workspace
+rc=0/0 e1=232008bc-5dfc-4934-8a1a-158af329e751 wks_4cf93858d2dea867 e2=39c7c8b5-93e8-4491-89d9-f53e973ee0d6 wks_4cf93858d2dea867 workspaces=[wks_4cf93858d2dea867]
+PASS - both tabs in one shared workspace
+
+FAILS=0
