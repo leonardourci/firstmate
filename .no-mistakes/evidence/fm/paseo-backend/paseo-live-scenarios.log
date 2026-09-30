@@ -1,0 +1,40 @@
+paseo 0.10.2  FM_HOME=/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.vm1FOy
+
+== S1 fallback: firstmate outside Paseo gets per-project 'firstmate' workspace; last close archives it and deletes its project
+  created terminal=214239a6-8edb-4a6b-829e-d620981d7156 workspace=wks_8085a51d29ef96d7 title='firstmate' project=prj_fc4b1301687111fb
+PASS - S1 spawn created 'firstmate' workspace + project for demo
+  after kill: workspace alive? no; project=
+PASS - S1 last close archived workspace and deleted project
+
+== S2 guard: sibling tab holds the shared workspace back; closing the last one retires
+PASS - S2 second task is a sibling tab in same workspace
+PASS - S2 first close kept workspace+project (sibling tab alive)
+PASS - S2 last close retired workspace+project
+
+== S3 adversarial: tab already closed by captain in Paseo; teardown kill still retires the recorded workspace
+  tab closed directly via 'paseo terminal kill'; workspace alive? yes
+PASS - S3 kill rc=0 and gone-tab workspace+project retired
+
+== S4 guard: project folder outside FM_HOME/projects is archived-workspace-only, project never deleted
+PASS - S4 workspace archived, outside project prj_c62c8f59ba271cfe kept
+
+== S5 terminal-tab primary (PASEO_WORKSPACE_ID): tab lands in own workspace whatever the project; closing keeps own workspace
+  own workspace=wks_a08354631d11d921 cwd=/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.vm1FOy title=firstmate
+PASS - S5 demo2 task tab placed in own workspace; no new workspace/project
+PASS - S5 closing the last task tab kept own workspace (even titled 'firstmate')
+
+== S6 agent primary (PASEO_AGENT_ID only): unique workspace with cwd=FM_HOME is adopted
+PASS - S6 agent-only primary adopted home workspace wks_a08354631d11d921
+PASS - S6 own workspace kept after close
+
+== S7 adversarial: two workspaces at FM_HOME are ambiguous -> falls back to per-project workspace, retired on close
+PASS - S7 ambiguous home -> fallback 'firstmate' workspace wks_2cdadf6d53f4d53b for demo2
+PASS - S7 fallback retired; both home workspaces untouched
+
+== S8 explicit-only: ambient Paseo markers never select paseo
+  fm_backend_name with PASEO_* markers + paseo bundle id, no selection -> 'tmux'
+PASS - S8 not auto-detected (tmux)
+  FM_BACKEND=paseo -> 'paseo'
+PASS - S8 explicit FM_BACKEND=paseo selects paseo
+
+FAILS=0
