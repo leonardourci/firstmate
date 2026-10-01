@@ -1,0 +1,36 @@
+== bash: source fm-backend.sh, fm_backend_source paseo, real binary + version check
+source rc=0
+bin=paseo
+version_check rc=0
+tool_present rc=127
+hometag-lib fn defined rc=0
+== bash: cmux still sources (shared sibling list)
+cmux source rc=0
+== zsh: source fm-backend.sh, fm_backend_source paseo, real binary + version check
+/Users/leonardourci/.no-mistakes/worktrees/6e55bfafc110/01M3VVJ04A4VJVFVX9D3ACK18V/bin/backends/paseo.sh:.:93: no such file or directory: /Users/leonardourci/.no-mistakes/worktrees/bin/fm-backend-hometag-lib.sh
+/Users/leonardourci/.no-mistakes/worktrees/6e55bfafc110/01M3VVJ04A4VJVFVX9D3ACK18V/bin/backends/paseo.sh:.:99: no such file or directory: /Users/leonardourci/.no-mistakes/worktrees/bin/fm-composer-lib.sh
+source rc=0
+bin=paseo
+version_check rc=0
+tool_present rc=127
+hometag-lib fn defined rc=1
+== zsh: cmux still sources (shared sibling list)
+/Users/leonardourci/.no-mistakes/worktrees/6e55bfafc110/01M3VVJ04A4VJVFVX9D3ACK18V/bin/backends/cmux.sh:.:115: no such file or directory: /Users/leonardourci/.no-mistakes/worktrees/bin/fm-backend-hometag-lib.sh
+/Users/leonardourci/.no-mistakes/worktrees/6e55bfafc110/01M3VVJ04A4VJVFVX9D3ACK18V/bin/backends/cmux.sh:.:121: no such file or directory: /Users/leonardourci/.no-mistakes/worktrees/bin/fm-composer-lib.sh
+cmux source rc=0
+== adversarial: paseo sibling lib missing -> refuse
+bash paseo source w/o hometag lib rc=1
+zsh paseo source w/o hometag lib rc=1
+== explicit-only: inside Paseo env markers, no config -> backend name
+bash auto -> tmux
+zsh auto -> tmux
+FM_BACKEND=paseo -> paseo
+config/backend=paseo -> tmux
+== probe rerun (corrected): config via FM_CONFIG_OVERRIDE, real paseo tool check
+bash inside-Paseo env, no config -> tmux
+zsh inside-Paseo env, no config -> tmux
+no config -> tmux
+FM_BACKEND=paseo -> paseo
+config/backend=paseo -> paseo
+bash required_tool_available paseo (real CLI) rc=0
+zsh required_tool_available paseo (real CLI) rc=0
