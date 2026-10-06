@@ -1,0 +1,32 @@
+{
+  "rules": [
+    {
+      "when": "Trivial mechanical edit with an obvious path: rename, typo, formatting sweep, version bump, file gathering.",
+      "use": [
+        { "harness": "codex", "model": "gpt-6-luna", "effort": "low" },
+        { "harness": "cursor", "model": "composer-2.5" },
+        { "harness": "claude", "model": "claude-haiku-4-5" }
+      ],
+      "why": "Cheapest models with reliable tool calling; take whichever has quota."
+    },
+    {
+      "when": "Large or risky but well-defined implementation: multi-file features, refactors, migrations where the path is clear.",
+      "use": [
+        { "harness": "claude", "model": "claude-opus-5-5", "effort": "high" },
+        { "harness": "codex", "model": "gpt-6.1-sol", "effort": "high" }
+      ]
+    },
+    {
+      "when": "Ambiguous or open-ended work: unclear requirements, design, investigation, root-cause analysis, with or without code.",
+      "use": [
+        { "harness": "claude", "model": "claude-opus-5-5", "effort": "xhigh" },
+        { "harness": "codex", "model": "gpt-6.1-sol", "effort": "xhigh" }
+      ],
+      "why": "Strongest reasoning; delegate file gathering to cheap subagents."
+    }
+  ],
+  "default": [
+    { "harness": "claude", "model": "claude-sonnet-5-5", "effort": "medium" },
+    { "harness": "codex", "model": "gpt-6.1-sol", "effort": "medium" }
+  ]
+}
