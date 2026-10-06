@@ -11,4 +11,3 @@ ok - real paseo: fm_backend_busy_state reports unknown (watcher falls back to ca
 ok - real paseo: a second task on the same project is a sibling tab in the same workspace and registers no new project
 ok - real paseo: kill closes only the task's tab, leaves the sibling tab and the shared workspace alive, and is idempotent/best-effort
 ok - real paseo: list_live discovers a live task terminal by fm-<id> name
-rc=0

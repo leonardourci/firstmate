@@ -1,0 +1,6 @@
+inside a Paseo agent/tab, FM_BACKEND unset:
+tmux
+FM_BACKEND=paseo:
+paseo
+config/backend=paseo:
+paseo
