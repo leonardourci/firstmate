@@ -22,6 +22,17 @@
 # one absolute path to an existing readable, searchable directory. Firstmate
 # never copies credentials or changes a global login.
 #
+# config/claude-account may list several logins, one per line, in fallback
+# order. A one-line file behaves exactly as a single pin always has. With two
+# or more, each launch walks the list in order: a login that is not signed in
+# refuses the launch, as a single pin does, rather than being skipped; a
+# signed-in login whose own quota-axi read shows a bound for the launch model
+# exhausted_now or known at 0% is skipped; the first other login is chosen,
+# including one whose quota is unknown or unreadable. When every listed login
+# is spent, the launch refuses; nothing falls back to an unlisted login. A
+# relaunch whose task record names a login the file still lists reuses that
+# login without walking, so a running task never switches accounts.
+#
 # A Pi root can hold several provider identities, so config/pi-account names
 # the root on line 1 and the providers that home may spend on line 2,
 # separated by spaces. A pinned Pi launch must name its provider explicitly as
@@ -56,7 +67,11 @@
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-timeout-lib.sh"
 
+# shellcheck source=bin/fm-quota-axi-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-quota-axi-lib.sh"
+
 FM_WORKER_ACCOUNT_CHECK_SECONDS=${FM_WORKER_ACCOUNT_CHECK_SECONDS:-30}
+FM_WORKER_ACCOUNT_QUOTA_SECONDS=${FM_WORKER_ACCOUNT_QUOTA_SECONDS:-30}
 
 # Credentials Claude Code ranks above the /login stored in its config root
 # (code.claude.com/docs/en/authentication, "Authentication precedence"; the
@@ -76,7 +91,8 @@ fm_worker_account_file() {
 
 # fm_worker_account_read <harness> <file>
 # Prints "declared<TAB>providers" for a valid pin, where declared is
-# `ordinary` or the absolute path and providers is empty for Claude. The final
+# `ordinary` or the absolute path and providers is empty for Claude; a Claude
+# pin listing several logins prints one such line per login, in file order. The final
 # newline is optional; any other control byte, including a CR, is malformed.
 # Parses bytes before the shell can drop NULs or trailing newlines; paths are
 # literal, never shell expressions. Returns 0 on success, 3 when the file does
@@ -94,11 +110,11 @@ fm_worker_account_read() {
     open(my $fh, "<", $f) or exit 5;
     my $body = do { local $/; <$fh> } // "";
     if ($harness eq "claude") {
-      $body =~ /\A(ordinary|\/[^\x00-\x1f\x7f]*)\n?\z/ or exit 6;
-      print $1, "\t";
+      $body =~ /\A((?:(?:ordinary|\/[^\x00-\x1f\x7f]*)\n)*(?:ordinary|\/[^\x00-\x1f\x7f]*))\n?\z/ or exit 6;
+      print "$_\t\n" for split /\n/, $1;
     } else {
       $body =~ /\A(ordinary|\/[^\x00-\x1f\x7f]*)\n([A-Za-z0-9][A-Za-z0-9._-]*(?: +[A-Za-z0-9][A-Za-z0-9._-]*)*)\n?\z/ or exit 6;
-      print $1, "\t", $2;
+      print $1, "\t", $2, "\n";
     }
   ' -- "$1" "$2"
 }
@@ -106,14 +122,15 @@ fm_worker_account_read() {
 # fm_worker_account_resolve <harness> <config-dir>
 # Prints "declared<TAB>root<TAB>providers" for a valid pin, where root is the
 # directory the launch selects (empty for ordinary Claude, meaning
-# CLAUDE_CONFIG_DIR unset). Prints nothing and returns 0 when the runner is
+# CLAUDE_CONFIG_DIR unset), one line per listed Claude login in fallback
+# order. Prints nothing and returns 0 when the runner is
 # not pinnable or the home has no pin. On refusal prints one error naming the
 # file and returns 1.
 fm_worker_account_resolve() {
-  local harness=$1 config=$2 file cfg token rc declared root fallback
+  local harness=$1 config=$2 file cfg tokens token rc declared root fallback
   file=$(fm_worker_account_file "$harness") || return 0
   cfg="$config/$file"
-  token=$(fm_worker_account_read "$harness" "$cfg")
+  tokens=$(fm_worker_account_read "$harness" "$cfg")
   rc=$?
   case "$rc" in
   0) ;;
@@ -127,29 +144,31 @@ fm_worker_account_resolve() {
     if [ "$file" = pi-account ]; then
       echo "error: config/$file must hold 'ordinary' or one absolute path on line 1 and the providers this home may spend on line 2, separated by spaces, with no other lines or control characters: $cfg" >&2
     else
-      echo "error: config/$file must hold 'ordinary' or one absolute path on a single line with no control characters: $cfg" >&2
+      echo "error: config/$file must hold 'ordinary' or an absolute path on each line, one login per line in fallback order, with no blank lines or control characters: $cfg" >&2
     fi
     return 1
     ;;
   esac
-  declared=${token%%$'\t'*}
-  root=$declared
   # shellcheck disable=SC2088  # The fallbacks are literal text for the refusal.
   case "$harness" in
   claude) fallback='~/.claude with CLAUDE_CONFIG_DIR unset' ;;
   *) fallback='~/.pi/agent' ;;
   esac
-  if [ "$declared" = ordinary ]; then
-    case "$harness" in
-    claude) root= ;;
-    *) root="${HOME:?HOME is required to resolve an ordinary Pi account}/.pi/agent" ;;
-    esac
-  fi
-  if [ -n "$root" ] && { [ ! -d "$root" ] || [ ! -r "$root" ] || [ ! -x "$root" ]; }; then
-    echo "error: config/$file must name a readable, searchable existing directory (ordinary means $fallback): $cfg -> $root" >&2
-    return 1
-  fi
-  printf '%s\t%s\t%s\n' "$declared" "$root" "${token#*$'\t'}"
+  while IFS= read -r token; do
+    declared=${token%%$'\t'*}
+    root=$declared
+    if [ "$declared" = ordinary ]; then
+      case "$harness" in
+      claude) root= ;;
+      *) root="${HOME:?HOME is required to resolve an ordinary Pi account}/.pi/agent" ;;
+      esac
+    fi
+    if [ -n "$root" ] && { [ ! -d "$root" ] || [ ! -r "$root" ] || [ ! -x "$root" ]; }; then
+      echo "error: config/$file must name a readable, searchable existing directory (ordinary means $fallback): $cfg -> $root" >&2
+      return 1
+    fi
+    printf '%s\t%s\t%s\n' "$declared" "$root" "${token#*$'\t'}"
+  done <<< "$tokens"
 }
 
 # fm_worker_account_pi_provider <model>
@@ -217,18 +236,69 @@ fm_worker_account_check() {
   return 0
 }
 
-# fm_worker_account_select <harness> <config-dir> <model> <executable> [<raw-command>]
+# fm_worker_account_claude_quota_row <root>
+# Prints the Claude provider row of one quota-axi read made under that login
+# (CLAUDE_CONFIG_DIR=<root>, or unset for an empty root), as compact JSON, or
+# null when quota-axi is missing, fails, times out, or prints no valid
+# snapshot. The read sheds the same credentials a pinned launch sheds, plus
+# CLAUDE_SECURESTORAGE_CONFIG_DIR, which would otherwise select another
+# Keychain item, so it measures the account the worker would spend.
+fm_worker_account_claude_quota_row() {
+  local root=$1 var out
+  local -a cmd=(env -u CLAUDE_SECURESTORAGE_CONFIG_DIR)
+  command -v quota-axi >/dev/null 2>&1 || { echo null; return 0; }
+  for var in $FM_WORKER_ACCOUNT_CLAUDE_SHED; do
+    cmd+=(-u "$var")
+  done
+  if [ -n "$root" ]; then
+    cmd+=("CLAUDE_CONFIG_DIR=$root")
+  else
+    cmd+=(-u CLAUDE_CONFIG_DIR)
+  fi
+  out=$(fm_run_timed "$FM_WORKER_ACCOUNT_QUOTA_SECONDS" "${cmd[@]}" \
+    quota-axi --provider claude --json 2>/dev/null </dev/null) || out=
+  if printf '%s\n' "$out" | fm_quota_json_valid >/dev/null 2>&1; then
+    printf '%s\n' "$out" | jq -c "$FM_QUOTA_ROW_JQ"' quota_row(.; "claude"; "")' 2>/dev/null && return 0
+  fi
+  echo null
+}
+
+# fm_worker_account_claude_spent <row-json> <model>
+# Returns 0 and prints "<scope> <remaining>%" or "<scope> exhausted_now" when
+# the row has a bound for <model> that quota_spent (bin/fm-quota-axi-lib.sh)
+# counts as out; returns 1, printing nothing, when the login has room or its
+# quota is unknown.
+fm_worker_account_claude_spent() {
+  jq -ner --argjson row "$1" --arg model "$2" "$FM_QUOTA_ROW_JQ"'
+    quota_spent($row; $model) // empty |
+    "\(.scope) \(if (.runway.status // "") == "exhausted_now" then "exhausted_now" else "\(.effectivePercentRemaining)%" end)"' 2>/dev/null
+}
+
+# fm_worker_account_select <harness> <config-dir> <model> <executable> [<raw-command>] [<recorded>]
 # The whole launch-time decision. Prints nothing for an unpinned runner, so
 # the caller keeps today's launch unchanged. For a pinned one prints
 # "declared<TAB>root<TAB>provider", where provider is the Pi launch model's
-# own (empty for Claude), after the model guard and the sign-in check pass. On
-# refusal prints one error and returns 1. bin/fm-spawn.sh runs it before any
-# endpoint exists, and bin/fm-control.sh before a relaunch stops the live
-# agent.
+# own (empty for Claude), after the model guard, the sign-in check, and, for
+# a Claude list of two or more logins, the quota walk the header describes.
+# <recorded> is a relaunching Claude task's recorded account=; when the file
+# still lists it, that login is the only one considered. On refusal prints
+# one error and returns 1. bin/fm-spawn.sh runs it before any endpoint
+# exists, and bin/fm-control.sh before a relaunch stops the live agent.
 fm_worker_account_select() {
-  local harness=$1 config=$2 model=$3 executable=$4 raw=${5:-} selection declared root providers word provider=
+  local harness=$1 config=$2 model=$3 executable=$4 raw=${5:-} recorded=${6:-}
+  local selection declared root providers word line row spent spentlist='' provider=
+  local -a logins=()
   selection=$(fm_worker_account_resolve "$harness" "$config") || return 1
   [ -n "$selection" ] || return 0
+  if [ "$harness" = claude ]; then
+    while IFS= read -r line; do
+      [ -z "$recorded" ] || [ "${line%%$'\t'*}" = "$recorded" ] || continue
+      logins+=("$line")
+    done <<< "$selection"
+    # A recorded login the file no longer lists falls back to the whole list.
+    [ "${#logins[@]}" -gt 0 ] || while IFS= read -r line; do logins+=("$line"); done <<< "$selection"
+    selection=${logins[0]}
+  fi
   declared=${selection%%$'\t'*}
   root=${selection#*$'\t'}
   providers=${root#*$'\t'}
@@ -263,6 +333,23 @@ fm_worker_account_select() {
       return 1
       ;;
     esac
+  fi
+  if [ "$harness" = claude ] && [ "${#logins[@]}" -gt 1 ]; then
+    for line in "${logins[@]}"; do
+      declared=${line%%$'\t'*}
+      root=${line#*$'\t'}
+      root=${root%%$'\t'*}
+      fm_worker_account_check claude "$declared" "$root" "$executable" || return 1
+      row=$(fm_worker_account_claude_quota_row "$root")
+      if spent=$(fm_worker_account_claude_spent "$row" "$model"); then
+        spentlist="$spentlist${spentlist:+; }$declared: $spent"
+        continue
+      fi
+      printf '%s\t%s\t\n' "$declared" "$root"
+      return 0
+    done
+    echo "error: every Claude login config/claude-account allows is out of usage ($spentlist), so no Claude worker starts and no unlisted login is used; wait for a usage reset or dispatch another harness" >&2
+    return 1
   fi
   fm_worker_account_check "$harness" "$declared" "$root" "$executable" "$provider" || return 1
   printf '%s\t%s\t%s\n' "$declared" "$root" "$provider"

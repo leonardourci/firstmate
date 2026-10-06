@@ -814,6 +814,39 @@ test_worker_account_pin_follows_the_relaunch() {
   pass "fm-control relaunch: the replacement follows the home's current worker account pin"
 }
 
+test_relaunch_keeps_the_recorded_login_from_a_list() {
+  local dir out rc id=rl-acct-list
+  dir=$(new_case acct-list "$id")
+  add_ship_task "$dir" "$id" claude
+  make_claude_auth_stub "$dir"
+  cat > "$dir/fakebin/quota-axi" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\${CLAUDE_CONFIG_DIR-unset}" >> '$dir/quota-reads'
+cat "\$CLAUDE_CONFIG_DIR/quota.json"
+SH
+  chmod +x "$dir/fakebin/quota-axi"
+  mkdir -p "$dir/home/config" "$dir/work" "$dir/personal"
+  : > "$dir/work/.credentials.json"
+  : > "$dir/personal/.credentials.json"
+  printf '%s\n' '{"schemaVersion": 5, "providers": [{"provider": "claude", "quotaSemantics": {"status": "known", "effectiveAvailability": [{"scope": "all_models", "status": "known", "effectivePercentRemaining": 80, "runway": {"status": "through_reset"}}]}}]}' \
+    > "$dir/work/quota.json"
+  printf '%s\n%s\n' "$dir/work" "$dir/personal" > "$dir/home/config/claude-account"
+  printf 'account=%s\n' "$dir/personal" >> "$dir/home/state/$id.meta"
+  out=$(run_control "$dir" "$id" relaunch --note "recorded login"); rc=$?
+  expect_code 0 "$rc" "a relaunch on a listed recorded login should succeed"$'\n'"$out"
+  [ "$(meta_field "$dir" "$id" account)" = "$dir/personal" ] || fail "the relaunch should keep the recorded login"
+  assert_contains "$(cat "$dir/fake/literal")" "CLAUDE_CONFIG_DIR='$dir/personal'" \
+    "the replacement should launch under the recorded login, not the first one with room"
+  assert_absent "$dir/quota-reads" "a relaunch on its recorded login must not walk the list"
+  : > "$dir/fake/literal"
+  printf '%s\n%s\n' "$dir/work" "$dir/other" > "$dir/home/config/claude-account"
+  mkdir -p "$dir/other"
+  out=$(run_control "$dir" "$id" relaunch --note "recorded login removed"); rc=$?
+  expect_code 0 "$rc" "a relaunch whose recorded login is no longer listed should walk the list"$'\n'"$out"
+  [ "$(meta_field "$dir" "$id" account)" = "$dir/work" ] || fail "an unlisted recorded login should give way to the list"
+  pass "fm-control relaunch: a recorded Claude login is kept while listed, and an unlisted one gives way to the list"
+}
+
 test_explicit_model_wins_over_the_recorded_one() {
   local dir out rc
   dir=$(new_case explicit rl7)
@@ -2457,6 +2490,7 @@ test_same_harness_relaunch_keeps_the_profile_axes
 test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop
 test_signed_out_worker_account_pin_refuses_before_stop
 test_worker_account_pin_follows_the_relaunch
+test_relaunch_keeps_the_recorded_login_from_a_list
 test_explicit_model_wins_over_the_recorded_one
 test_relaunch_onto_an_unverified_harness_is_refused
 test_prior_harness_turnend_registry_entry_is_cleared

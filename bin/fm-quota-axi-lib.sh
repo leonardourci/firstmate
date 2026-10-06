@@ -28,6 +28,12 @@ FM_QUOTA_PROVIDER_ID_RE='^[a-z0-9]+(-[a-z0-9]+)*\z'
 #   quota_row($snapshot; $provider; $lane)
 #                                  the one provider row the candidate binds to,
 #                                  or null; schema 5 ignores $lane.
+#   quota_applicable($row; $model) the row's effective-availability bounds that
+#                                  apply to $model: provider-wide scopes plus
+#                                  its own model or product scope.
+#   quota_spent($row; $model)      the first applicable bound that is
+#                                  exhausted_now or known at 0% or less, or
+#                                  null when the row (or a null row) has room.
 # shellcheck disable=SC2016,SC2034  # jq program text, not shell expansion; read by the sourcing consumers
 FM_QUOTA_ROW_JQ='
   def quota_lane($harness; $model):
@@ -42,6 +48,17 @@ FM_QUOTA_ROW_JQ='
        ([$rows[] | select(.accountKey == "default")] | first) // null)
     else ($rows | first) // null
     end;
+  def quota_applicable($row; $model):
+    ($model | split("/") | last) as $bare |
+    [(($row // {}).quotaSemantics.effectiveAvailability // [])[] | select(
+      .scope == "all_models" or .scope == "all_products" or
+      ($model != "" and (.scope == ("model:" + $bare) or .scope == ("product:" + $bare)))
+    )];
+  def quota_spent($row; $model):
+    [quota_applicable($row; $model)[] | select(
+      (.runway.status // "") == "exhausted_now" or
+      (.status == "known" and (.effectivePercentRemaining | type) == "number" and .effectivePercentRemaining <= 0)
+    )] | first;
 '
 
 # fm_quota_axi_version_compatible <version-output>

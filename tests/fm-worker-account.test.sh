@@ -9,7 +9,8 @@
 # credential counts as signed in, otherwise the selected root's stored login
 # decides - and record the account environment and arguments a launched worker
 # receives. tests/fm-worker-account-live-e2e.test.sh proves those answers
-# against the real runners.
+# against the real runners. The fake quota-axi answers a Claude read with the
+# selected root's quota.json, so no case needs a real login.
 set -u
 
 # shellcheck source=tests/fixtures.sh
@@ -69,7 +70,13 @@ esac
   printf 'ARGS=%s\n' "\$*"
 } > '$dir/pi-worker'
 SH
-  chmod +x "$fakebin/claude" "$fakebin/pi"
+  cat > "$fakebin/quota-axi" <<SH
+#!/usr/bin/env bash
+printf '%s %s\n' "\${CLAUDE_CONFIG_DIR-unset}" "\${ANTHROPIC_API_KEY-unset}" >> '$dir/quota-reads'
+[ "\$*" = '--provider claude --json' ] || exit 2
+cat "\${CLAUDE_CONFIG_DIR:-\$HOME/.claude}/quota.json"
+SH
+  chmod +x "$fakebin/claude" "$fakebin/pi" "$fakebin/quota-axi"
 }
 
 # new_case <name> <crew-harness> -> sets CASE HOME_DIR PROJ WT FAKEBIN
@@ -90,6 +97,15 @@ new_case() {
 signed_in_claude_root() {
   mkdir -p "$1"
   printf '{}\n' > "$1/.credentials.json"
+}
+
+# claude_quota <root> <percent> [<runway>]: the quota-axi Claude snapshot a
+# read under that root returns.
+claude_quota() {
+  cat > "$1/quota.json" <<JSON
+{"schemaVersion": 5, "providers": [{"provider": "claude", "quotaSemantics": {"status": "known", "effectiveAvailability": [
+  {"scope": "all_models", "status": "known", "effectivePercentRemaining": $2, "runway": {"status": "${3:-through_reset}"}, "selection": {"spendPriority": 0.1}}]}}]}
+JSON
 }
 
 # spawn_ship <id> [fm-spawn args...]: a ship spawn from HOME_DIR whose invoking
@@ -131,6 +147,7 @@ test_absent_pin_keeps_the_launch_unchanged() {
   assert_not_contains "$out" "account=" "an unpinned spawn must not report an account"
   assert_no_grep "account=" "$HOME_DIR/state/$id.meta" "an unpinned task record must not carry an account"
   assert_absent "$CASE/claude-checks" "an unpinned spawn must not run a sign-in check"
+  assert_absent "$CASE/quota-reads" "an unpinned spawn must not read quota"
   run_pane
   assert_grep "CLAUDE_CONFIG_DIR=$CASE/ambient-claude" "$CASE/claude-worker" \
     "an unpinned launch must keep forwarding the invoking process's own Claude root"
@@ -167,6 +184,95 @@ test_claude_pin_selects_the_root_and_sheds_ambient_credentials() {
   assert_grep "CLAUDE_CODE_OAUTH_TOKEN=unset" "$CASE/claude-worker" "an ambient OAuth token must not outrank the pin"
   assert_grep "CLAUDE_CODE_USE_BEDROCK=unset" "$CASE/claude-worker" "an ambient cloud-provider switch must not outrank the pin"
   pass "a Claude pin selects its root and sheds the credentials that would outrank it"
+}
+
+test_single_login_pin_never_reads_quota() {
+  local out rc id=acct-single
+  new_case single-login claude
+  signed_in_claude_root "$CASE/work"
+  claude_quota "$CASE/work" 0
+  printf '%s\n' "$CASE/work" > "$HOME_DIR/config/claude-account"
+  out=$(spawn_ship "$id"); rc=$?
+  expect_code 0 "$rc" "a one-line pin should launch as it always has, whatever its quota: $out"
+  assert_contains "$out" "account=$CASE/work" "the spawn should report the pinned account"
+  assert_absent "$CASE/quota-reads" "a one-line pin must not read quota"
+  pass "a one-line Claude pin keeps today's launch and reads no quota"
+}
+
+# claude_list_case <name> <work-percent|none> <personal-percent|none> [<work-runway>]
+# A home listing a signed-in work login first and a signed-in personal login
+# second; none leaves that login's quota unreadable.
+claude_list_case() {
+  new_case "$1" claude
+  signed_in_claude_root "$CASE/work"
+  signed_in_claude_root "$CASE/personal"
+  [ "$2" = none ] || claude_quota "$CASE/work" "$2" "${4:-through_reset}"
+  [ "$3" = none ] || claude_quota "$CASE/personal" "$3"
+  printf '%s\n%s\n' "$CASE/work" "$CASE/personal" > "$HOME_DIR/config/claude-account"
+}
+
+test_claude_login_list_takes_the_first_login_with_room() {
+  local out rc id=acct-list-first
+  claude_list_case list-first 40 90
+  out=$(spawn_ship "$id"); rc=$?
+  expect_code 0 "$rc" "a listed login with room should launch: $out"
+  assert_contains "$out" "account=$CASE/work" "the first login with room should be chosen"
+  assert_grep "account=$CASE/work" "$HOME_DIR/state/$id.meta" "the task record should carry the chosen login"
+  [ "$(cat "$CASE/quota-reads")" = "$CASE/work unset" ] \
+    || fail "only the first login's quota should be read, without ambient credentials: $(cat "$CASE/quota-reads")"
+  [ "$(cat "$CASE/claude-checks")" = "$CASE/work" ] \
+    || fail "only the chosen login should be sign-in checked: $(cat "$CASE/claude-checks")"
+  run_pane
+  assert_grep "CLAUDE_CONFIG_DIR=$CASE/work" "$CASE/claude-worker" "the worker should run under the first login"
+  pass "a Claude login list launches on the first login that has room"
+}
+
+test_claude_login_list_falls_back_past_a_spent_login() {
+  local out rc id=acct-list-next
+  claude_list_case list-next 0 90
+  out=$(spawn_ship "$id"); rc=$?
+  expect_code 0 "$rc" "a spent first login should fall back to the next: $out"
+  assert_contains "$out" "account=$CASE/personal" "the fallback login should be chosen"
+  assert_grep "account=$CASE/personal" "$HOME_DIR/state/$id.meta" "the task record should carry the fallback login"
+  run_pane
+  assert_grep "CLAUDE_CONFIG_DIR=$CASE/personal" "$CASE/claude-worker" "the worker should run under the fallback login"
+
+  claude_list_case list-runway 30 90 exhausted_now
+  out=$(spawn_ship "$id-runway"); rc=$?
+  expect_code 0 "$rc" "an exhausted_now runway should fall back to the next login: $out"
+  assert_contains "$out" "account=$CASE/personal" "an exhausted_now login should be skipped"
+  pass "a Claude login list skips a login at 0% or exhausted_now"
+}
+
+test_claude_login_list_refuses_when_every_login_is_spent() {
+  local out rc id=acct-list-out
+  claude_list_case list-out 0 0
+  out=$(spawn_ship "$id"); rc=$?
+  expect_code 1 "$rc" "every listed login spent must refuse"
+  assert_refused_before_launch "$id" "$out" "every Claude login config/claude-account allows is out of usage"
+  assert_contains "$out" "$CASE/work: all_models 0%" "the refusal should name each spent login"
+  assert_absent "$CASE/ambient-claude/.claude.json" "a refusal must not fall back to the ambient login"
+  pass "a Claude login list refuses when every listed login is out of usage"
+}
+
+test_claude_login_list_treats_unknown_quota_as_usable() {
+  local out rc id=acct-list-unknown
+  claude_list_case list-unknown none 90
+  out=$(spawn_ship "$id"); rc=$?
+  expect_code 0 "$rc" "an unreadable quota should not block: $out"
+  assert_contains "$out" "account=$CASE/work" "a login with unknown quota is usable"
+  pass "a Claude login whose quota cannot be read counts as usable"
+}
+
+test_claude_login_list_refuses_a_signed_out_login_rather_than_skipping() {
+  local out rc id=acct-list-signed-out
+  claude_list_case list-signed-out 90 90
+  rm "$CASE/work/.credentials.json"
+  out=$(spawn_ship "$id"); rc=$?
+  expect_code 1 "$rc" "a signed-out listed login must refuse"
+  assert_refused_before_launch "$id" "$out" "config/claude-account pins Claude workers to $CASE/work, which is not signed in"
+  assert_absent "$CASE/quota-reads" "a signed-out login must refuse before any quota read"
+  pass "a signed-out listed login refuses the launch, as a single pin does, rather than being skipped"
 }
 
 test_claude_pin_refuses_a_signed_out_root_despite_an_ambient_login() {
@@ -209,7 +315,8 @@ test_malformed_pins_refuse_before_launch() {
   local out rc id=acct-bad n=0 body
   new_case malformed claude
   mkdir -p "$CASE/work"
-  for body in 'relative/root' "$CASE/work"$'\r' '' 'ordinary'$'\n''environment' "$CASE/missing-root"; do
+  for body in 'relative/root' "$CASE/work"$'\r' '' 'ordinary'$'\n''environment' "$CASE/missing-root" \
+    "$CASE/work"$'\n\n'ordinary "$CASE/work"$'\n'"$CASE/missing-root"; do
     n=$((n + 1))
     printf '%s' "$body" > "$HOME_DIR/config/claude-account"
     out=$(spawn_ship "$id-$n"); rc=$?
@@ -227,7 +334,7 @@ test_malformed_pins_refuse_before_launch() {
   expect_code 1 "$rc" "a Pi pin without a providers line must refuse"
   assert_refused_before_launch "$id-pi" "$out" "config/pi-account must hold"
   assert_absent "$CASE/claude-checks" "a malformed pin must refuse before any sign-in check"
-  pass "malformed, relative, CR-terminated, empty, extra-line, missing-root, and non-file pins refuse before launch"
+  pass "malformed, relative, CR-terminated, empty, bad-line, blank-line, missing-root, and non-file pins refuse before launch"
 }
 
 test_pi_pin_selects_the_root_and_the_declared_provider() {
@@ -387,6 +494,12 @@ test_local_secondmate_reads_the_launching_home_pin() {
 test_absent_pin_keeps_the_launch_unchanged
 test_claude_pin_selects_the_root_and_sheds_ambient_credentials
 test_claude_pin_refuses_a_signed_out_root_despite_an_ambient_login
+test_single_login_pin_never_reads_quota
+test_claude_login_list_takes_the_first_login_with_room
+test_claude_login_list_falls_back_past_a_spent_login
+test_claude_login_list_refuses_when_every_login_is_spent
+test_claude_login_list_treats_unknown_quota_as_usable
+test_claude_login_list_refuses_a_signed_out_login_rather_than_skipping
 test_claude_ordinary_pin_unsets_the_config_root
 test_malformed_pins_refuse_before_launch
 test_pi_pin_selects_the_root_and_the_declared_provider

@@ -855,7 +855,7 @@ The [Claude adapter reference](../.agents/skills/harness-adapters/references/har
 
 ## Worker account pin (config/claude-account, config/pi-account)
 
-A home that mixes accounts for one runner, such as a work login and a personal one, can pin the account its own Claude and Pi workers launch on.
+A home that mixes accounts for one runner, such as a work login and a personal one, can pin the account its own Claude and Pi workers launch on, and a Claude home can list fallback logins for when one runs out of usage.
 The pin is opt-in: with neither file, every launch is unchanged, and Claude workers keep receiving firstmate's own `CLAUDE_CONFIG_DIR` when it is set.
 
 Both files are local and gitignored.
@@ -867,16 +867,35 @@ Both files are local and gitignored.
 
 ### File format and provider selection
 
-`config/claude-account` holds one line: `ordinary`, or the absolute path of an existing Claude config directory.
+`config/claude-account` holds one or more lines in fallback order, each `ordinary` or the absolute path of an existing Claude config directory.
 `config/pi-account` holds that same root on line 1 and, on line 2, the providers this home may spend, separated by spaces, for example `openai-codex anthropic`.
 
-A final newline is optional; any other line, a relative path, or a control character such as a CR refuses.
+A final newline is optional; a blank line, a relative path, a control character such as a CR, or any extra line in `config/pi-account` refuses.
 For Claude, `ordinary` unsets `CLAUDE_CONFIG_DIR` rather than pointing it at `~/.claude`, because Claude reads `$CLAUDE_CONFIG_DIR/.claude.json` and keys its macOS Keychain entry to any directory that is set ([authentication, "Credential management"](https://code.claude.com/docs/en/authentication#credential-management)).
 
 A Pi root can hold several provider logins at once, so the root alone does not say which account a launch spends.
 A pinned Pi launch therefore needs `--model <provider>/<id>` naming a declared provider, and Firstmate also passes `--provider <that provider>` so Pi cannot resolve the model under another signed-in provider.
 
 An unqualified model, an undeclared provider, or a raw Pi launch command, which cannot receive that flag, refuses; Firstmate never guesses a provider.
+
+### Claude fallback order
+
+A one-line `config/claude-account` behaves exactly as a single pin and reads no quota.
+With two or more lines, for example a work login's directory followed by `ordinary` for the personal one, each Claude launch walks the list in order:
+
+1. The login must be signed in; a signed-out login refuses the launch, as a single pin does, rather than being skipped, so a broken first login is reported instead of quietly spending the fallback.
+2. Firstmate reads `quota-axi --provider claude --json` with that login's `CLAUDE_CONFIG_DIR` (unset for `ordinary`) and without the environment credentials a pinned launch unsets.
+3. A login with an account-wide bound, or the launch model's own bound, at `exhausted_now` or known at 0% remaining is skipped.
+   Unknown or unreadable quota counts as usable, as everywhere else Firstmate meets unmeasurable quota.
+4. The first login not skipped is the one the worker launches on.
+
+When every listed login is out of usage, the Claude launch refuses with `every Claude login config/claude-account allows is out of usage`; it never uses an unlisted login, including firstmate's own unless it is listed.
+Other harnesses keep competing for the task through the dispatch profiles.
+
+A Claude relaunch keeps the login its task record names, without walking the list, while the file still lists that login; a recorded login the file no longer lists gives way to the walk.
+
+[Typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key) and the [`quota-array-dispatch`](../.agents/skills/quota-array-dispatch/SKILL.md#1-eligibility) intake rank a `claude` candidate on the login this walk would choose for its model, read per login as above, rather than on firstmate's own account; with every login spent they use the last one's spent row.
+A single-line pin is read the same way, so its quota evidence matches the account its workers spend.
 
 ### Launch scope and sign-in checks
 
@@ -895,8 +914,8 @@ A home that authenticates Claude through environment credentials on purpose shou
 
 ### Failures, reporting, and inheritance
 
-A malformed file, a root that is not a readable directory, or a signed-out account refuses the launch and names the file to fix; Firstmate never falls back to the ambient account and never changes a global login or copies a credential.
-The spawn prints the pin as `account=` (plus `account_provider=` for Pi) and records the same fields in the task record, so the session-start digest shows which account each worker launched on.
+A malformed file, a root that is not a readable directory, a signed-out account, or a Claude list whose every login is out of usage refuses the launch and names the file to fix; Firstmate never falls back to the ambient account and never changes a global login or copies a credential.
+The spawn prints the chosen login as `account=` (plus `account_provider=` for Pi) and records the same fields in the task record, so the session-start digest shows which account each worker launched on.
 
 Pins are not inherited into secondmate homes: a local secondmate agent launches on the launching home's pin, while the secondmate's own workers read the secondmate home's files.
 A remote secondmate is launched on its host from its own home's configuration, so create the file in that remote home.
@@ -1175,7 +1194,7 @@ After the answer, code applies all remaining checks and ranking:
 
 - The confidence floor and the matched rule's `approval` and `floor`.
 - Each candidate's `provider` and `floor`.
-- Every applicable account-wide and model/product row from one `quota-axi --json` snapshot.
+- Every applicable account-wide and model/product row from one `quota-axi --json` snapshot; under a [worker account pin](#claude-fallback-order), a `claude` candidate reads the login the spawn would choose instead, and its candidate line names that login as `account=`.
 - The numeric `spendPriority` argmax over candidates, using each candidate's limiting row.
 
 The [shared quota library](../bin/fm-quota-axi-lib.sh) accepts schema 5 and schema 6 and implements the [account-matching contract](../.agents/skills/quota-array-dispatch/SKILL.md#1-eligibility).

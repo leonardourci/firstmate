@@ -145,6 +145,10 @@ else
 fi
 printf '%s\n' "$*" >> "${QUOTA_AXI_CALLS:?}"
 [ "${FAKE_QUOTA_FAIL:-0}" = 1 ] && exit 1
+if [ "$*" = '--provider claude --json' ]; then
+  cat "${CLAUDE_CONFIG_DIR:?}/quota.json"
+  exit
+fi
 [ "${1:-}" = --json ] || exit 2
 cat "${QUOTA_AXI_FIXTURE:?}"
 SH
@@ -986,6 +990,44 @@ for bad in \
   expect_code 2 "$code" "malformed rules exit 2: ${bad#*|}"
   assert_contains "$err" "malformed rules file: $RULES - ${bad#*|}" "malformed rules are named: ${bad#*|}"
 done
+# --- a Claude login list: claude candidates read the login spawn would choose --
+claude_login_quota() {  # <root> <percent> <runway> <spendPriority>
+  mkdir -p "$1"
+  printf '{"schemaVersion": 5, "providers": [{"provider": "claude", "quotaSemantics": {"status": "known", "effectiveAvailability": [{"scope": "all_models", "status": "known", "effectivePercentRemaining": %s, "runway": {"status": "%s"}, "selection": {"spendPriority": %s}}]}}]}\n' \
+    "$2" "$3" "$4" > "$1/quota.json"
+}
+claude_login_quota "$TMP_ROOT/work" 0 exhausted_now -2
+claude_login_quota "$TMP_ROOT/personal" 60 through_reset 0.9
+printf '%s\n%s\n' "$TMP_ROOT/work" "$TMP_ROOT/personal" > "$HOME_DIR/config/claude-account"
+cp "$BASE_RULES" "$RULES"
+write_response "$RESPONSE" rule_4 0.9
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+expect_code 0 "$code" "a Claude login list exits 0: $err"
+assert_contains "$out" "candidate: claude:sonnet  provider=claude  account=$TMP_ROOT/personal  scope=all_models  remaining=60%  spendPriority=0.9  runway=through_reset  -> eligible" \
+  "a claude candidate ranks on the fallback login when the first is spent, not on firstmate's own row"
+assert_contains "$out" "  profile: --harness 'claude' --model 'sonnet'" "the fallback login's headroom wins the ranking"
+assert_equals $'--json\n--provider claude --json\n--provider claude --json' "$(cat "$LOG/quota-axi.calls")" \
+  "one ambient read plus one read per listed login"
+claude_login_quota "$TMP_ROOT/personal" 0 exhausted_now -2
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+assert_contains "$out" "candidate: claude:sonnet  provider=claude  account=$TMP_ROOT/personal  scope=all_models  remaining=0%  spendPriority=-  runway=exhausted_now  -> not eligible: runway exhausted_now at all_models" \
+  "a claude candidate is not eligible when every listed login is spent"
+rm "$TMP_ROOT/work/quota.json"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+assert_contains "$out" "candidate: claude:sonnet  provider=claude  account=$TMP_ROOT/work  -> eligible, unranked: provider claude has no quota row for account claude-account:$TMP_ROOT/work: disclosed uncertainty" \
+  "an unreadable first login is the one spawn would choose, disclosed as unmeasured"
+printf 'relative\n' > "$HOME_DIR/config/claude-account"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+assert_contains "$out" "  status: error" "a malformed login list is an actionable error"
+assert_contains "$out" "config/claude-account must hold" "the error names the file"
+rm "$HOME_DIR/config/claude-account"
+reset_log
+pass "a Claude login list binds claude candidates to the login spawn would choose"
+
 printf '%s\n' '{"rules":[{"when":"x","use":[{"harness":"opencode"},{"harness":"rovo"},{"harness":"codex"}]}],"default":[{"harness":"pi"},{"harness":"claude"}]}' > "$RULES"
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
 expect_code 2 "$code" "multiple provider-less profiles exit 2"

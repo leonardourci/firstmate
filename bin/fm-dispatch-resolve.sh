@@ -28,7 +28,9 @@
 #   candidate binds to one row through quota_row in
 #   bin/fm-quota-axi-lib.sh, so a Pi lane such as openai-codex-work/...
 #   reads its own account's row and an expanded provider with no row for the
-#   candidate is unmeasured, never blocked), and the spendPriority argmax over
+#   candidate is unmeasured, never blocked; under config/claude-account a
+#   claude candidate binds instead to one quota-axi read per listed login, on
+#   the login fm-spawn.sh would choose for its model), and the spendPriority argmax over
 #   the eligible candidates. The model never sees quota, catalogs, approvals,
 #   confidence floors, `why`, or `use`. With no rules, it returns a non-clear
 #   result so firstmate keeps using the existing intake.
@@ -89,6 +91,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-timing-lib.sh"
 # shellcheck source=bin/fm-brief-heading-lib.sh
 . "$SCRIPT_DIR/fm-brief-heading-lib.sh"
+# shellcheck source=bin/fm-worker-account-lib.sh
+. "$SCRIPT_DIR/fm-worker-account-lib.sh"
 
 CONFIDENCE_FLOOR=0.6
 TS_MODEL=jev-latest
@@ -349,25 +353,39 @@ jq -e --slurpfile rules "$RULES" '
 command -v quota-axi >/dev/null 2>&1 || emit_error "quota-axi not installed"
 quota-axi --json > "$QUOTA" 2>/dev/null || emit_error "quota-axi --json failed"
 fm_quota_json_valid < "$QUOTA" || emit_error "quota-axi --json returned an invalid snapshot"
+# A home whose config/claude-account pins Claude workers spends those logins,
+# not firstmate's own, so a claude candidate binds to one quota-axi read per
+# listed login and to the login fm-spawn.sh would choose for its model.
+CLAUDE_LOGINS='[]'
+PIN=$(fm_worker_account_resolve claude "$CONFIG" 2>&1) || emit_error "${PIN#error: }"
+while IFS= read -r pin_line; do
+  [ -n "$pin_line" ] || continue
+  pin_root=${pin_line#*$'\t'}
+  CLAUDE_LOGINS=$(jq -c --arg d "${pin_line%%$'\t'*}" --argjson row "$(fm_worker_account_claude_quota_row "${pin_root%%$'\t'*}")" \
+    '. + [{declared: $d, row: $row}]' <<<"$CLAUDE_LOGINS")
+done <<< "$PIN"
 
 # ---- resolution: declared gates + quota evidence + argmax, all in jq ------------
-RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg none_criterion "$DEFAULT_WHEN" --argjson pmap "$PMAP" \
+RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg none_criterion "$DEFAULT_WHEN" --argjson pmap "$PMAP" --argjson logins "$CLAUDE_LOGINS" \
   --slurpfile resp "$RESP_FILE" --slurpfile rules "$RULES" --slurpfile quota "$QUOTA" "$FM_QUOTA_ROW_JQ"'
   ($resp[0]) as $r | ($rules[0]) as $cfg | ($quota[0]) as $q | ($r.answers.rule) as $a |
   def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
-  def prov($p; $lane): quota_row($q; $p; $lane);
+  # The pinned login spawn would choose: the first not spent for the model, else the last.
+  def claude_login($m):
+    $logins[first(range(0; $logins | length) | select(quota_spent($logins[.].row; $m) == null)) // (($logins | length) - 1)].declared;
+  def prov($p; $lane):
+    if ($lane | startswith("claude-account:"))
+    then ($lane | ltrimstr("claude-account:")) as $d | [$logins[] | select(.declared == $d) | .row] | first
+    else quota_row($q; $p; $lane) end;
   def rows($p; $lane): (prov($p; $lane) | .quotaSemantics.effectiveAvailability // []);
   def bare($m): ($m | split("/") | last);
   def provider_of($c): ($c.provider // $pmap[$c.harness] // null);
-  def lane_of($c): quota_lane($c.harness; $c.model);
+  def lane_of($c):
+    if $c.harness == "claude" and ($logins | length) > 0 then "claude-account:" + claude_login($c.model // "")
+    else quota_lane($c.harness; $c.model) end;
   def measured($p; $lane):
     (prov($p; $lane) != null and (["known", "partial"] | index(prov($p; $lane).quotaSemantics.status)) != null);
-  def applicable($p; $lane; $m):
-    (bare($m)) as $bare |
-    [rows($p; $lane)[] | select(
-      .scope == "all_models" or .scope == "all_products" or
-      ($m != "" and (.scope == ("model:" + $bare) or .scope == ("product:" + $bare)))
-    )];
+  def applicable($p; $lane; $m): quota_applicable(prov($p; $lane); $m);
   def floor_state($f; $p; $lane):
     if $f == null then "none"
     elif prov($p; $lane) == null or (measured($p; $lane) | not) then "unknown"
@@ -379,8 +397,8 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
     end;
   def evidence($rows):
     $rows | map({scope, status, pct: (.effectivePercentRemaining // null), runway: (.runway.status // null), spendPriority: (.selection.spendPriority // null)});
-  def evaluate($c):
-    (provider_of($c)) as $p | (lane_of($c)) as $lane |
+  def evaluate_lane($c; $lane):
+    (provider_of($c)) as $p |
     if $p == null then {profile: $c, eligible: false, reason: "no provider family for harness \($c.harness); declare provider on the profile"}
     elif prov($p; $lane) == null then
       {profile: $c, provider: $p, eligible: true, unranked: true,
@@ -423,6 +441,9 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
          spendPriority: $limiting.selection.spendPriority, runway: $limiting.runway.status, eligible: true, reason: "ok"}
       end
     end;
+  def evaluate($c):
+    (lane_of($c)) as $lane |
+    evaluate_lane($c; $lane) + (if ($lane | startswith("claude-account:")) then {account: ($lane | ltrimstr("claude-account:"))} else {} end);
   def rule_at($c):
     if ($c | test("^rule_[1-9][0-9]*$")) then
       ($c | ltrimstr("rule_") | tonumber) as $n |
@@ -510,6 +531,7 @@ TEXT=$(jq -r '
   (if .unranked_note then "  note: \(.unranked_note | flat)" else empty end),
   (.candidates[]? | "  candidate: \(.profile.harness | flat):\(show(.profile.model))"
       + (if .provider then "  provider=\(.provider | flat)" else "" end)
+      + (if .account then "  account=\(.account | flat)" else "" end)
       + (if .scope then "  scope=\(.scope | flat)  remaining=\(show(.pct))%  spendPriority=\(show(.spendPriority))  runway=\(show(.runway))" else "" end)
       + (if (.bounds // [] | length) > 1 then "  bounds=" + ([.bounds[] | "\(.scope | flat):\(show(.pct))%/\((.runway // .status) | flat)"] | join(",")) else "" end)
       + "  -> " + (if .unranked then "eligible, unranked: \(.reason | flat): disclosed uncertainty" elif .eligible then "eligible" else "not eligible: \(.reason | flat)" end)),

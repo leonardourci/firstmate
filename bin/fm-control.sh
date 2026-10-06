@@ -896,10 +896,13 @@ resolve_relaunch_profile() {
   # The launch owner applies this home's worker account pin too, but only after
   # the old agent has been stopped, so a pin that no longer resolves or is
   # signed out must refuse here, while nothing has changed yet.
-  local account_model=$TARGET_MODEL
+  local account_model=$TARGET_MODEL recorded_account=
   [ "$account_model" != default ] || account_model=
+  if [ "$TARGET_HARNESS" = claude ] && [ "$PRIOR_HARNESS" = claude ]; then
+    recorded_account=$(fm_meta_get "$META" account)
+  fi
   fm_worker_account_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
-    "$account_model" "$TARGET_HARNESS" >/dev/null || return 1
+    "$account_model" "$TARGET_HARNESS" "" "$recorded_account" >/dev/null || return 1
 }
 
 # safe_checkpoint: prove, before anything is stopped, that the work a relaunch

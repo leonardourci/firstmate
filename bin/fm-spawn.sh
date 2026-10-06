@@ -340,7 +340,9 @@
 #   receives this process's own CLAUDE_CONFIG_DIR when it is set, and Pi the
 #   destination pane's ambient account. A present file pins every launch of
 #   that runner from this home - ship, scout, local secondmate, raw Claude
-#   command, and relaunch - to the declared account root, and the spawn
+#   command, and relaunch - to the declared account root (a Claude file may
+#   list several logins in fallback order, walked by remaining quota, and a
+#   Claude relaunch keeps the task's recorded login while it is listed), and the spawn
 #   refuses before any endpoint, worktree, or record exists when the file is
 #   malformed, the root is unusable, or the runner's own check says it is not
 #   signed in. A pinned Claude launch sheds the environment credentials Claude
@@ -2438,9 +2440,15 @@ fi
 # record exists. An absent pin selects nothing and leaves every later launch
 # step exactly as it was. A pinned Claude root is exported here as well, so the
 # trust registration below writes the store the worker will actually read.
+# A Claude relaunch passes the task's recorded login so it never switches
+# accounts mid-task while the home file still lists that login.
 RAW_COMMAND=
 [ "$RAW_LAUNCH" = 0 ] || RAW_COMMAND=$ARG3
-WORKER_ACCOUNT=$(fm_worker_account_select "$HARNESS" "$CONFIG" "$MODEL" "${PI_BIN:-$HARNESS}" "$RAW_COMMAND") || exit 1
+RECORDED_ACCOUNT=
+if [ "$RELAUNCH" -eq 1 ] && [ "$HARNESS" = claude ] && [ "$RELAUNCH_PRIOR_HARNESS" = claude ]; then
+  RECORDED_ACCOUNT=$(fm_meta_get "$RELAUNCH_META" account)
+fi
+WORKER_ACCOUNT=$(fm_worker_account_select "$HARNESS" "$CONFIG" "$MODEL" "${PI_BIN:-$HARNESS}" "$RAW_COMMAND" "$RECORDED_ACCOUNT") || exit 1
 WORKER_ACCOUNT_DECLARED=${WORKER_ACCOUNT%%$'\t'*}
 WORKER_ACCOUNT_ROOT=${WORKER_ACCOUNT#*$'\t'}
 WORKER_ACCOUNT_PROVIDER=${WORKER_ACCOUNT_ROOT#*$'\t'}
