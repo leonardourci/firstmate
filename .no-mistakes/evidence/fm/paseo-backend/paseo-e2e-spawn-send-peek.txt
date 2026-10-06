@@ -1,0 +1,31 @@
+$ fm-spawn.sh e2e1 $LAB/projects/demo --scout --harness 'bash --norc -i'   (config/backend=paseo)
+spawned e2e1 harness=bash kind=scout window=27c16adb-2b78-4f1d-a4fc-934c213d08a2:wks_6af59139b60936d9 worktree=/Users/leonardourci/.treehouse/demo-1cdf63/1/demo
+
+$ cat state/e2e1.meta (paseo keys)
+window=27c16adb-2b78-4f1d-a4fc-934c213d08a2:wks_6af59139b60936d9
+backend=paseo
+paseo_terminal_id=27c16adb-2b78-4f1d-a4fc-934c213d08a2
+paseo_workspace_id=wks_6af59139b60936d9
+
+paseo workspace for task: {"name":"firstmate","cwd":"/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.e2e/projects/demo"}
+paseo terminal for task: {"name":"fm-firstmate-1d619a2a-e2e1","workspaceId":"wks_6af59139b60936d9"}
+
+$ fm-send.sh e2e1 'echo hello-from-firstmate-e2e'
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+send rc=0
+
+$ fm-peek.sh e2e1
+…/demo-1cdf63/1/demo  heads/main ❯ export COMPACT_ADVISER_DISABLE=1
+…/demo-1cdf63/1/demo  heads/main ❯ export FM_TASK_ID=e2e1
+…/demo-1cdf63/1/demo  heads/main ❯ . '/tmp/fm-e2e1+fdf21f243abdf9317588a99a9fbe8
+95c2710041b405bfd4af5083461179eb0ec/launch.s1791245056.17664.30352.sh'
+bash-5.3$ : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your '
+e2e1.inbox' steering inbox, read and act on each in numeric order, then mv each
+into its handled/.
+bash-5.3$

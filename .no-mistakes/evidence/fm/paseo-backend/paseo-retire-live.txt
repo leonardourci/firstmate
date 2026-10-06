@@ -1,0 +1,18 @@
+FM_HOME=/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.cGN8Uy (marked lab home)
+== Scenario A: last-tab cleanup retires the per-project workspace and project for a home clone
+task1 tab=d77e4a64-6088-4ad2-b312-165ed04af183 ws=wks_ddcdec9c91521335 ; task2 tab=8a960248-0575-4ed6-bea7-63d295c75222 ws=wks_ddcdec9c91521335 ; same workspace: yes
+workspace title: firstmate
+project registered for projects/demo: prj_3766148ebabcc5f0
+after teardown of task1: workspace alive=yes (expected yes: sibling tab remains) ; project present=yes (expected yes)
+after teardown of task2 (last tab): workspace alive=no (expected no) ; project present=no (expected no)
+== Scenario B: tab already closed in the Paseo UI, teardown still retires the recorded workspace
+project registered for projects/gone: prj_c4c3a2eab54d49d6
+tab b9b45c3f-5064-4c4a-bf81-4804f35a1a25 closed outside firstmate; workspace alive before teardown=yes
+teardown rc=0 ; workspace alive=no (expected no) ; project present=no (expected no)
+== Scenario C (adversarial): workspace for a project outside the home's projects/ is never archived
+after teardown of its last tab: tab gone=yes ; workspace alive=yes (expected yes) ; project present=yes (expected yes)
+== Scenario D (adversarial): a workspace titled by someone else on a home clone is never archived
+after teardown of the fm tab inside workspace 'captain-own': workspace alive=yes (expected yes) ; project present=yes (expected yes)
+== residue check (after test-owned cleanup)
+lab terminals left: 0
+lab/outside projects left: 0

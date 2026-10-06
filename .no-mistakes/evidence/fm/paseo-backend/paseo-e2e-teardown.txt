@@ -1,0 +1,40 @@
+$ fm-teardown.sh e2e1
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+REFUSED: scout task e2e1 has no report at /var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.e2e/data/e2e1/report.md.
+The report is the work product. Have the crewmate write it, or use --force after explicit discard approval.
+teardown rc=1
+
+after teardown:
+  task terminal still live: 1  (expected 0)
+  per-project 'firstmate' workspace still live: 1  (expected 0)
+  Paseo project for $LAB/projects/demo: 1  (expected 0)
+  state/e2e1.meta present: yes
+(scout report written so teardown's report guard passes)
+$ fm-teardown.sh e2e1
+fm-captain-hold: origin e2e1 has no completed captain-call inventory
+REFUSED: scout task e2e1 has not passed the captain-call completion gate.
+Inventory its report and any visual review through bin/fm-captain-hold.sh before teardown.
+teardown rc=1
+
+after teardown:
+  task terminal still live: 1  (expected 0)
+  per-project 'firstmate' workspace still live: 1  (expected 0)
+  Paseo project for $LAB/projects/demo: 1  (expected 0)
+  state/e2e1.meta present: yes
+(captain-call gate unrelated to paseo; throwaway lab task discarded with --force)
+$ fm-teardown.sh e2e1 --force
+teardown: reaping leaked worktree process(es) for e2e1: 18780 20664
+teardown: force-killing leaked worktree process(es) for e2e1: 18780 20664
+A new version of treehouse is available: v2.3.0 → v3.1.2
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown e2e1 complete (window 27c16adb-2b78-4f1d-a4fc-934c213d08a2:wks_6af59139b60936d9, worktree /Users/leonardourci/.treehouse/demo-1cdf63/1/demo)
+Backlog: e2e1 just finished (this home keeps no markdown backlog at /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.e2e/data/backlog.md). Update /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.e2e/data/backlog.md - move e2e1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+teardown rc=0
+
+after teardown:
+  task terminal still live: 0  (expected 0)
+  per-project 'firstmate' workspace still live: 0  (expected 0)
+  Paseo project for $LAB/projects/demo: 0  (expected 0)
+  state/e2e1.meta present: no
