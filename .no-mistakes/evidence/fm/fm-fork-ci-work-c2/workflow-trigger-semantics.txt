@@ -1,0 +1,19 @@
+== ci.yml
+ base on: {"push":{"branches":["main"]},"pull_request":{"branches":["main"]}}
+ new  on: {"push":{"branches":["main","work"]},"pull_request":{"branches":["main","work"]}}
+ runners: {"lint":"ubuntu-latest","test-coverage":"ubuntu-latest","tests-portable-parallel-1":"ubuntu-latest","tests-portable-parallel-2":"ubuntu-latest","tests-portable-serial":"ubuntu-latest","tests-herdr":"ubuntu-latest","tests-timing-aggregate":"ubuntu-latest","macos-stock-bash":"macos-latest","invariants":"ubuntu-latest"}
+ non-trigger content identical to base: true
+  push -> main: triggers
+  push -> work: triggers
+  push -> feature-x: skipped
+  pull_request -> main: triggers
+  pull_request -> work: triggers
+  pull_request -> feature-x: skipped
+== no-mistakes-required.yml
+ base on: {"pull_request":{"types":["opened","edited","synchronize","reopened"],"branches":["main"]}}
+ new  on: {"pull_request":{"types":["opened","edited","synchronize","reopened"],"branches":["main","work"]}}
+ runners: {"check":"ubuntu-latest"}
+ non-trigger content identical to base: true
+  pull_request -> main: triggers
+  pull_request -> work: triggers
+  pull_request -> feature-x: skipped
