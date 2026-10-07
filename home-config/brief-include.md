@@ -2,7 +2,7 @@
 
 You may hand side work to your harness's own subagents inside this task. You stay the owner: make the decisions, review every subagent result, and run the final verification yourself.
 
-Use the cheapest model that fits the side job (Claude: haiku; Codex: gpt-6-luna):
+Use the cheapest model that fits the side job (Claude: Haiku 5.5, `haiku`; Codex: gpt-6-luna):
 
 - Finding code: locating definitions, callers, usages, or mapping an area. Ask for a file:line list, not file dumps.
 - Mechanical follow-through: applying an already-decided rename or import fix across many files. Review the diff yourself.
