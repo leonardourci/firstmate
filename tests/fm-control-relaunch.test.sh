@@ -837,14 +837,35 @@ SH
   [ "$(meta_field "$dir" "$id" account)" = "$dir/personal" ] || fail "the relaunch should keep the recorded login"
   assert_contains "$(cat "$dir/fake/literal")" "CLAUDE_CONFIG_DIR='$dir/personal'" \
     "the replacement should launch under the recorded login, not the first one with room"
-  assert_absent "$dir/quota-reads" "a relaunch on its recorded login must not walk the list"
   : > "$dir/fake/literal"
+  printf '%s\n' '{"schemaVersion": 5, "providers": [{"provider": "claude", "quotaSemantics": {"status": "known", "effectiveAvailability": [{"scope": "all_models", "status": "known", "effectivePercentRemaining": 0, "runway": {"status": "exhausted_now"}}]}}]}' \
+    > "$dir/personal/quota.json"
+  out=$(run_control "$dir" "$id" relaunch --note "recorded login spent"); rc=$?
+  expect_code 0 "$rc" "a relaunch whose recorded login is spent should walk the list"$'\n'"$out"
+  [ "$(meta_field "$dir" "$id" account)" = "$dir/work" ] || fail "a spent recorded login should give way to the next listed login"
+  assert_contains "$(cat "$dir/fake/literal")" "CLAUDE_CONFIG_DIR='$dir/work'" \
+    "the replacement should launch under the next listed login with room"
+  cp "$dir/personal/quota.json" "$dir/work/quota.json"
+  grep -v '^account=' "$dir/home/state/$id.meta" > "$dir/meta.tmp"
+  printf 'account=%s\n' "$dir/personal" >> "$dir/meta.tmp"
+  mv "$dir/meta.tmp" "$dir/home/state/$id.meta"
+  printf claude > "$dir/fake/command"
+  : > "$dir/fake/literal"
+  cp "$dir/home/state/$id.meta" "$dir/meta-before"
+  out=$(run_control "$dir" "$id" relaunch --note "every login spent"); rc=$?
+  expect_code 1 "$rc" "a relaunch with every listed login spent must refuse"
+  assert_contains "$out" "every Claude login config/claude-account allows is out of usage" \
+    "the refusal should say every listed login is spent"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "an all-spent refusal must come before the running agent stops"
+  [ ! -s "$dir/fake/literal" ] || fail "an all-spent refusal must send no lifecycle input"
+  cmp -s "$dir/meta-before" "$dir/home/state/$id.meta" || fail "an all-spent refusal must leave the task record untouched"
+  rm "$dir/work/quota.json"
   printf '%s\n%s\n' "$dir/work" "$dir/other" > "$dir/home/config/claude-account"
   mkdir -p "$dir/other"
   out=$(run_control "$dir" "$id" relaunch --note "recorded login removed"); rc=$?
   expect_code 0 "$rc" "a relaunch whose recorded login is no longer listed should walk the list"$'\n'"$out"
   [ "$(meta_field "$dir" "$id" account)" = "$dir/work" ] || fail "an unlisted recorded login should give way to the list"
-  pass "fm-control relaunch: a recorded Claude login is kept while listed, and an unlisted one gives way to the list"
+  pass "fm-control relaunch: a recorded Claude login is kept while listed with room, a spent or unlisted one gives way to the list, and all spent refuses"
 }
 
 test_explicit_model_wins_over_the_recorded_one() {

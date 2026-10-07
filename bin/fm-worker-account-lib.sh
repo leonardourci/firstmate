@@ -281,7 +281,8 @@ fm_worker_account_claude_spent() {
 # own (empty for Claude), after the model guard, the sign-in check, and, for
 # a Claude list of two or more logins, the quota walk the header describes.
 # <recorded> is a relaunching Claude task's recorded account=; when the file
-# still lists it, that login is the only one considered. On refusal prints
+# still lists it, the walk tries it first, so a relaunch keeps it while it has
+# room and otherwise walks the rest of the list in order. On refusal prints
 # one error and returns 1. bin/fm-spawn.sh runs it before any endpoint
 # exists, and bin/fm-control.sh before a relaunch stops the live agent.
 fm_worker_account_select() {
@@ -292,11 +293,12 @@ fm_worker_account_select() {
   [ -n "$selection" ] || return 0
   if [ "$harness" = claude ]; then
     while IFS= read -r line; do
-      [ -z "$recorded" ] || [ "${line%%$'\t'*}" = "$recorded" ] || continue
-      logins+=("$line")
+      if [ -n "$recorded" ] && [ "${line%%$'\t'*}" = "$recorded" ]; then
+        logins=("$line" ${logins[@]+"${logins[@]}"})
+      else
+        logins+=("$line")
+      fi
     done <<< "$selection"
-    # A recorded login the file no longer lists falls back to the whole list.
-    [ "${#logins[@]}" -gt 0 ] || while IFS= read -r line; do logins+=("$line"); done <<< "$selection"
     selection=${logins[0]}
   fi
   declared=${selection%%$'\t'*}
