@@ -342,7 +342,8 @@
 #   that runner from this home - ship, scout, local secondmate, raw Claude
 #   command, and relaunch - to the declared account root (a Claude file may
 #   list several logins in fallback order, walked by remaining quota, and a
-#   Claude relaunch keeps the task's recorded login while it is listed), and the spawn
+#   Claude relaunch tries the task's recorded login first and keeps it while
+#   it is listed and not spent), and the spawn
 #   refuses before any endpoint, worktree, or record exists when the file is
 #   malformed, the root is unusable, or the runner's own check says it is not
 #   signed in. A pinned Claude launch sheds the environment credentials Claude
@@ -2440,8 +2441,8 @@ fi
 # record exists. An absent pin selects nothing and leaves every later launch
 # step exactly as it was. A pinned Claude root is exported here as well, so the
 # trust registration below writes the store the worker will actually read.
-# A Claude relaunch passes the task's recorded login so it never switches
-# accounts mid-task while the home file still lists that login.
+# A Claude relaunch passes the task's recorded login so the walk tries it
+# first and keeps it while the home file lists it and it is not spent.
 RAW_COMMAND=
 [ "$RAW_LAUNCH" = 0 ] || RAW_COMMAND=$ARG3
 RECORDED_ACCOUNT=

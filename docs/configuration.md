@@ -892,7 +892,7 @@ With two or more lines, for example a work login's directory followed by `ordina
 When every listed login is out of usage, the Claude launch refuses with `every Claude login config/claude-account allows is out of usage`; it never uses an unlisted login, including firstmate's own unless it is listed.
 Other harnesses keep competing for the task through the dispatch profiles.
 
-A Claude relaunch keeps the login its task record names, without walking the list, while the file still lists that login; a recorded login the file no longer lists gives way to the walk.
+A Claude relaunch tries the login its task record names first and keeps it while the file still lists it and it is not spent; otherwise the walk continues in list order and refuses when every listed login is spent, and a recorded login the file no longer lists gives way to the plain walk.
 
 [Typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key) and the [`quota-array-dispatch`](../.agents/skills/quota-array-dispatch/SKILL.md#1-eligibility) intake rank a `claude` candidate on the login this walk would choose for its model, read per login as above, rather than on firstmate's own account; with every login spent they use the last one's spent row.
 A single-line pin is read the same way, so its quota evidence matches the account its workers spend.

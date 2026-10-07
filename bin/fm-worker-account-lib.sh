@@ -30,8 +30,9 @@
 # exhausted_now or known at 0% is skipped; the first other login is chosen,
 # including one whose quota is unknown or unreadable. When every listed login
 # is spent, the launch refuses; nothing falls back to an unlisted login. A
-# relaunch whose task record names a login the file still lists reuses that
-# login without walking, so a running task never switches accounts.
+# relaunch whose task record names a login the file still lists tries that
+# login first and keeps it while it is not spent; otherwise the walk continues
+# in list order and refuses when every login is spent.
 #
 # A Pi root can hold several provider identities, so config/pi-account names
 # the root on line 1 and the providers that home may spend on line 2,
