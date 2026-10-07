@@ -1,0 +1,53 @@
+==================================================================
+SCENARIO: personal home (no config/claude-account): unchanged launch, no quota walk
+--- config/claude-account: (absent)
+--- fm-spawn.sh exit: 0
+--- fm-spawn.sh output (filtered):
+spawned t-personal harness=claude kind=ship mode=no-mistakes yolo=off window=firstmate:fm-t-personal worktree=<tmp>/personal-home/wt
+--- real quota-axi reads under logins: 
+--- task record account=: 
+--- launch command CLAUDE_CONFIG_DIR: 
+==================================================================
+SCENARIO: work home, enterprise has room -> enterprise login
+--- config/claude-account:
+<tmp>/ent-room/enterprise
+<tmp>/ent-room/personal
+--- fm-spawn.sh exit: 0
+--- fm-spawn.sh output (filtered):
+spawned t-ent harness=claude kind=ship mode=no-mistakes yolo=off window=firstmate:fm-t-ent worktree=<tmp>/ent-room/wt account=<tmp>/ent-room/enterprise
+--- real quota-axi reads under logins: <tmp>/ent-room/enterprise 
+--- task record account=: account=<tmp>/ent-room/enterprise
+--- launch command CLAUDE_CONFIG_DIR: CLAUDE_CONFIG_DIR='<tmp>/ent-room/enterprise'
+==================================================================
+SCENARIO: work home, enterprise out of usage -> personal fallback
+--- config/claude-account:
+<tmp>/ent-spent/enterprise
+<tmp>/ent-spent/personal
+--- fm-spawn.sh exit: 0
+--- fm-spawn.sh output (filtered):
+spawned t-fallback harness=claude kind=ship mode=no-mistakes yolo=off window=firstmate:fm-t-fallback worktree=<tmp>/ent-spent/wt account=<tmp>/ent-spent/personal
+--- real quota-axi reads under logins: <tmp>/ent-spent/enterprise <tmp>/ent-spent/personal 
+--- task record account=: account=<tmp>/ent-spent/personal
+--- launch command CLAUDE_CONFIG_DIR: CLAUDE_CONFIG_DIR='<tmp>/ent-spent/personal'
+==================================================================
+SCENARIO: work home, enterprise AND personal out of usage -> blocked
+--- config/claude-account:
+<tmp>/all-spent/enterprise
+<tmp>/all-spent/personal
+--- fm-spawn.sh exit: 1
+--- fm-spawn.sh output (filtered):
+error: every Claude login config/claude-account allows is out of usage (<tmp>/all-spent/enterprise: all_models exhausted_now; <tmp>/all-spent/personal: all_models exhausted_now), so no Claude worker starts and no unlisted login is used; wait for a usage reset or dispatch another harness
+--- real quota-axi reads under logins: <tmp>/all-spent/enterprise <tmp>/all-spent/personal 
+--- task record: (none published)
+--- launch command: (no worker launched)
+==================================================================
+SCENARIO: work home, enterprise login not signed in -> refused (not silently skipped)
+--- config/claude-account:
+<tmp>/ent-signedout/enterprise
+<tmp>/ent-signedout/personal
+--- fm-spawn.sh exit: 1
+--- fm-spawn.sh output (filtered):
+error: config/claude-account pins Claude workers to <tmp>/ent-signedout/enterprise, which is not signed in (claude auth status); sign in with CLAUDE_CONFIG_DIR=<tmp>/ent-signedout/enterprise claude, then /login, or change the pin
+--- real quota-axi reads under logins: 
+--- task record: (none published)
+--- launch command: (no worker launched)
