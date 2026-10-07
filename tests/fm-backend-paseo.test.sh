@@ -914,6 +914,7 @@ paseo_hold_workspace_lock() { # <home>
   local home=$1
   mkdir -p "$home/state"
   FM_HOME="$home" bash -c '. "$0/bin/fm-wake-lib.sh"; fm_lock_try_acquire "$FM_HOME/state/.paseo-workspace.lock" || exit 1; touch "$FM_HOME/state/.held"; sleep 30' "$ROOT" >/dev/null 2>&1 &
+  # shellcheck disable=SC2031 # The background PID is captured immediately in this shell.
   local holder=$! i=0
   while [ ! -e "$home/state/.held" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
   [ -e "$home/state/.held" ] || fail "could not take the paseo workspace lock for the test"
