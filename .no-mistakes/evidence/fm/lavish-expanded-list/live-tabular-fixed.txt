@@ -1,0 +1,32 @@
+=== fixed: read ===
+SESSION-ENDING MESSAGE: (none)
+
+declared_items: 2
+presented_items: 2
+malformed_items: 0
+complete: yes
+lifecycle: feedback
+session_ended: (unset)
+annotation_count: 2
+captain_message_count: 0
+
+ANNOTATIONS
+ANNOTATION 1 of 2
+element_uid: 1
+element_selector: h1#title
+tag: h1
+text:
+| Rollout decisions
+prompt:
+| Retitle, keep "phase 2", ok
+ANNOTATION 2 of 2
+element_uid: 3
+element_selector: p#intro
+tag: p
+text:
+| Annotate any table cell below.
+prompt:
+| Drop this line
+END ANNOTATIONS
+END LAVISH RESULT (2 of 2)
+rc=0

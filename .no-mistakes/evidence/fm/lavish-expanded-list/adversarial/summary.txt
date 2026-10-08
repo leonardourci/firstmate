@@ -1,0 +1,8 @@
+ended-with-expanded | base | declared_items: 0 presented_items: 0 malformed_items: 0 complete: yes | silent_rc=1
+ended-with-expanded | fixed | declared_items: 1 presented_items: 1 malformed_items: 0 complete: yes | silent_rc=1
+expanded-bad-quote | base | declared_items: 0 presented_items: 0 malformed_items: 0 complete: yes | silent_rc=1
+expanded-bad-quote | fixed | declared_items: 3 presented_items: 2 malformed_items: 1 complete: no | silent_rc=1
+expanded-stray-line | base | declared_items: 0 presented_items: 0 malformed_items: 0 complete: yes | silent_rc=1
+expanded-stray-line | fixed | declared_items: 3 presented_items: 3 malformed_items: 1 complete: no | silent_rc=1
+unframable-header | base | declared_items: 0 presented_items: 0 malformed_items: 0 complete: yes | silent_rc=1
+unframable-header | fixed | declared_items: 0 presented_items: 0 malformed_items: 1 complete: no | silent_rc=1

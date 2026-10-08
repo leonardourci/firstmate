@@ -1,0 +1,19 @@
+session:
+  file: /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lavish-live.gtJCgw/board/board.html
+  status: feedback
+  session_ended: true
+  ended_by: user
+prompts[1]:
+  - uid: "18"
+    prompt: Owner should be Cy
+    selector: "table#plan > tbody > tr:nth-of-type(2) > td:nth-of-type(2)"
+    tag: td
+    text: Bo
+    target:
+      type: table-cell
+      selector: "table#plan > tbody > tr:nth-of-type(2) > td:nth-of-type(2)"
+      rowLabel: Ship flag
+      columnLabel: Owner
+      text: Bo
+next_step: This was the last feedback before the user ended the session. Stop polling /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lavish-live.gtJCgw/board/board.html and do not reopen it - deliver any remaining updates directly in this conversation instead. Only run `lavish-axi /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lavish-live.gtJCgw/board/board.html --reopen` if the user explicitly asks for further review or something genuinely important needs their visual attention.
+dom_snapshot: "uid=4 body \"Rollout decisions Annotate any table cell below. Step Owner Status Migrate DB An\"\n  uid=3 h1 \"Rollout decisions\"\n  uid=5 p \"Annotate any table cell below.\"\n  uid=6 table \"Step Owner Status Migrate DB Ana blocked Ship flag Bo ready\"\n    uid=7 thead \"Step Owner Status\"\n      uid=8 tr \"Step Owner Status\"\n        uid=9 th \"Step\"\n        uid=10 th \"Owner\"\n        uid=11 th \"Status\"\n    uid=12 tbody \"Migrate DB Ana blocked Ship flag Bo ready\"\n      uid=13 tr \"Migrate DB Ana blocked\"\n        uid=14 td \"Migrate DB\"\n        uid=15 td \"Ana\"\n        uid=1 td \"blocked\"\n      uid=16 tr \"Ship flag Bo ready\"\n        uid=17 td \"Ship flag\"\n        uid=18 td \"Bo\"\n        uid=19 td \"ready\"\n  uid=20 script"

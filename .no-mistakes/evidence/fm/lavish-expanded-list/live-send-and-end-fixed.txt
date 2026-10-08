@@ -1,0 +1,30 @@
+=== fixed: read ===
+SESSION-ENDING MESSAGE: (none)
+
+declared_items: 1
+presented_items: 1
+malformed_items: 0
+complete: yes
+lifecycle: feedback
+session_ended: true
+annotation_count: 1
+session_ending_message_count: 0
+
+ANNOTATIONS
+ANNOTATION 1 of 1
+element_uid: 18
+element_selector: table#plan > tbody > tr:nth-of-type(2) > td:nth-of-type(2)
+tag: td
+text:
+| Bo
+prompt:
+| Owner should be Cy
+END ANNOTATIONS
+END LAVISH RESULT (1 of 1)
+rc=0
+=== fixed: classify ===
+feedback
+=== fixed: terminal ===
+rc=0 (0=retire source)
+=== fixed: silent ===
+rc=1 (0=silent, never announced)
