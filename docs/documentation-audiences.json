@@ -546,6 +546,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "home-config/brief-include.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": "skills/stow/SKILL.md",
       "audience": "public-product"
     },

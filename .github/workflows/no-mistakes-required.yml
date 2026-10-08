@@ -6,6 +6,7 @@ on:
     types: [opened, edited, synchronize, reopened]
     branches:
       - main
+      - work
 
 permissions:
   contents: read
