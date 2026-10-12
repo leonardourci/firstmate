@@ -743,6 +743,47 @@ test_pool_slot_claim_follows_the_spawn_outcome() {
   pass "a Treehouse slot claim names the launched task, refuses when unclaimable, and is dropped by a locked abort"
 }
 
+# A tmux spawn holds only Treehouse's interactive process lease, which lapses
+# with its worker. Its claim must carry no native fingerprint, so teardown after
+# the lapse still returns the copy, with or without --force.
+test_lapsed_process_lease_does_not_block_teardown() {
+  local rec id mode out status
+  for mode in normal force; do
+    id="pool-process-lapse-$mode"
+    rec=$(make_case "process-lapse-$mode" "$id")
+    read_case_record "$rec"
+    lay_out_as_pool_slot
+    jq --argjson pid "$$" '.worktrees[0] += {owner_pid:$pid,owner_started_at:1}' \
+      "$(dirname "$(dirname "$POOL_DIR")")/treehouse-state.json" > "$CASE_DIR/state.json"
+    mv "$CASE_DIR/state.json" "$(dirname "$(dirname "$POOL_DIR")")/treehouse-state.json"
+    out=$(run_spawn "$id" --scout)
+    status=$?
+    expect_code 0 "$status" "process-lease spawn should launch"$'\n'"$out"
+    grep -Fxq -- "task=$id" "$SLOT_CLAIM" || fail "process-lease spawn did not claim its slot"
+    if grep -q '^native_owner=' "$SLOT_CLAIM"; then
+      fail "process-lease claim recorded an expiring native fingerprint: $(cat "$SLOT_CLAIM")"
+    fi
+    jq '.worktrees[0] |= del(.owner_pid,.owner_started_at)' \
+      "$(dirname "$(dirname "$POOL_DIR")")/treehouse-state.json" > "$CASE_DIR/state.json"
+    mv "$CASE_DIR/state.json" "$(dirname "$(dirname "$POOL_DIR")")/treehouse-state.json"
+    printf 'scout findings\n' > "$HOME_DIR/data/$id/report.md"
+    FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' "$ROOT/bin/fm-captain-hold.sh" complete "$id" --none >/dev/null \
+      || fail "could not complete the scout's captain-call inventory"
+    if [ "$mode" = force ]; then
+      out=$(FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_TEARDOWN_GUARD_DONE=1 PATH="$FAKEBIN_DIR:$PATH" \
+        bash "$ROOT/bin/fm-teardown.sh" "$id" --force 2>&1)
+    else
+      out=$(FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_TEARDOWN_GUARD_DONE=1 PATH="$FAKEBIN_DIR:$PATH" \
+        bash "$ROOT/bin/fm-teardown.sh" "$id" 2>&1)
+    fi
+    status=$?
+    expect_code 0 "$status" "$mode teardown after a lapsed process lease should succeed"$'\n'"$out"
+    assert_not_contains "$out" "native allocation" "$mode teardown compared a lapsed process lease"
+    [ ! -e "$SLOT_CLAIM" ] || fail "$mode teardown kept the lapsed slot claim: $(cat "$SLOT_CLAIM")"
+  done
+  pass "a lapsed process lease carries no fingerprint and never blocks normal or forced teardown"
+}
+
 publish_feature_branch() { # <branch>
   git -C "$CASE_DIR/publisher" checkout --quiet -b "$1"
   printf 'only on %s\n' "$1" > "$CASE_DIR/publisher/feature-only.txt"
@@ -875,6 +916,7 @@ test_scout_base_branch_refused_on_gerrit_forge() {
 }
 
 test_remote_seeded_home_spawns_from_treehouse_pool
+test_lapsed_process_lease_does_not_block_teardown
 test_pool_slot_claim_follows_the_spawn_outcome
 test_linked_spawning_home_rejects_primary_before_refresh
 test_stale_pool_base_refreshes_before_branching

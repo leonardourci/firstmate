@@ -28,9 +28,9 @@ make_case() {
   printf '%s\n' "$PROJ" > "$CASE/cwd"
   fm_write_meta "$HOME_DIR/state/dead.meta" "kind=ship" "backend=paseo" \
     "window=old:wks_test" "paseo_terminal_id=old" "paseo_workspace_id=wks_test" \
-    "endpoint_task_id=dead" "project=$PROJ" "worktree=$WT" "spawn_gen=s1.2.3" \
+    "endpoint_task_id=dead" "project=$PROJ" "worktree=$WT" "spawn_gen=s1.2.3" "lease_gen=s1.2.3" \
     "mode=no-mistakes" "yolo=off"
-  printf 'task=dead\nhome=%s\nspawn_gen=s1.2.3\nnative_owner=lease:fixture-old\n' "$HOME_DIR" > "$CASE/pool/1/.fm-slot-owner"
+  printf 'task=dead\nhome=%s\nspawn_gen=s1.2.3\nnative_owner=lease:fixture-old\nlease_gen=s1.2.3\n' "$HOME_DIR" > "$CASE/pool/1/.fm-slot-owner"
   printf 'working [at=1]: evidence\n' > "$HOME_DIR/state/dead.status"
   printf '# In flight\n- dead: preserve this task\n' > "$HOME_DIR/data/backlog.md"
   cp "$HOME_DIR/data/backlog.md" "$CASE/backlog.before"
@@ -136,7 +136,7 @@ assert_retained() {
   cmp "$CASE/backlog.before" "$HOME_DIR/data/backlog.md" || fail "$1 changed backlog"
 }
 
-for scenario in dirty untracked unpushed live ambiguous malformed claim home generation legacy native-generation native-lease native-live process open-file lsof pipeline pipeline-unknown; do
+for scenario in dirty untracked unpushed live ambiguous malformed claim home generation lease-generation legacy native-generation native-lease native-live process open-file lsof pipeline pipeline-unknown; do
   make_case "$scenario"
   case "$scenario" in
     dirty) echo changed >> "$WT/README.md" ;;
@@ -148,6 +148,7 @@ for scenario in dirty untracked unpushed live ambiguous malformed claim home gen
     claim) sed 's/task=dead/task=another/' "$CASE/pool/1/.fm-slot-owner" > "$CASE/claim"; mv "$CASE/claim" "$CASE/pool/1/.fm-slot-owner" ;;
     home) sed "s@home=.*@home=$CASE@" "$CASE/pool/1/.fm-slot-owner" > "$CASE/claim"; mv "$CASE/claim" "$CASE/pool/1/.fm-slot-owner" ;;
     generation) sed 's/spawn_gen=.*/spawn_gen=other/' "$CASE/pool/1/.fm-slot-owner" > "$CASE/claim"; mv "$CASE/claim" "$CASE/pool/1/.fm-slot-owner" ;;
+    lease-generation) sed 's/lease_gen=.*/lease_gen=other/' "$CASE/pool/1/.fm-slot-owner" > "$CASE/claim"; mv "$CASE/claim" "$CASE/pool/1/.fm-slot-owner" ;;
     native-generation) jq '.worktrees[0].lease_id="other-owner"' "$CASE/pool/treehouse-state.json" > "$CASE/native"; mv "$CASE/native" "$CASE/pool/treehouse-state.json" ;;
     native-lease) jq '.worktrees[0].lease_holder="other-owner"' "$CASE/pool/treehouse-state.json" > "$CASE/native"; mv "$CASE/native" "$CASE/pool/treehouse-state.json" ;;
     native-live)
@@ -201,6 +202,35 @@ FM_HOME="$HOME_DIR" FM_TEARDOWN_GUARD_DONE=1 PATH="$FB:$PATH" bash "$ROOT/bin/fm
 [ "$(wc -l < "$CASE/returns" | tr -d ' ')" = 1 ] || fail 'records-only teardown returned successor'
 pass 'safe return is idempotent; status and later teardown keep reused slot untouched'
 
+claim_refresh() { # <spawn-gen> [lease-gen]
+  bash -c '. "$1/bin/fm-wake-lib.sh"; fm_treehouse_slot_owner_claim "$2" dead "$3" "$4" "${5:-}"' bash "$ROOT" "$WT" "$HOME_DIR" "$@"
+}
+
+make_case refreshed-generation
+cp "$CASE/pool/1/.fm-slot-owner" "$CASE/claim.before"
+if claim_refresh s9.9.9; then fail 'runtime generation alone re-proved a lease taken under another generation'; fi
+cmp "$CASE/claim.before" "$CASE/pool/1/.fm-slot-owner" || fail 'refused refresh changed the claim'
+claim_refresh s9.9.9 s1.2.3 || fail 'owned durable claim could not refresh its runtime generation'
+assert_grep 'spawn_gen=s9.9.9' "$CASE/pool/1/.fm-slot-owner" 'claim kept the old runtime generation'
+assert_grep 'lease_gen=s1.2.3' "$CASE/pool/1/.fm-slot-owner" 'claim lost the lease allocation generation'
+assert_grep 'native_owner=lease:fixture-old' "$CASE/pool/1/.fm-slot-owner" 'claim lost the native lease identity'
+if run_return > "$CASE/output" 2>&1; then fail 'stale record generation returned a refreshed claim'; fi
+assert_retained 'stale record generation'
+sed 's/^spawn_gen=.*/spawn_gen=s9.9.9/' "$HOME_DIR/state/dead.meta" > "$CASE/meta"; mv "$CASE/meta" "$HOME_DIR/state/dead.meta"
+run_return > "$CASE/output" 2>&1 || fail "refreshed generation return failed: $(cat "$CASE/output")"
+assert_grep 'if-lease-id fixture-old' "$CASE/returns" 'refreshed copy was not returned by its original lease'
+assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" 'refreshed return receipt missing'
+pass 'durable claim refreshes runtime generation, keeps lease identity, and returns the same lease'
+
+make_case paseo-relaunch
+cp "$HOME_DIR/state/dead.meta" "$CASE/meta.before"
+cp "$CASE/pool/1/.fm-slot-owner" "$CASE/claim.before"
+if fm_test_run_spawn "$HOME_DIR" "$PROJ" "$FB" --relaunch dead > "$CASE/output" 2>&1; then fail 'unsupported Paseo relaunch must refuse'; fi
+assert_grep 'no recovery-grade agent-state classifier' "$CASE/output" 'Paseo relaunch refused for another reason'
+cmp "$CASE/meta.before" "$HOME_DIR/state/dead.meta" || fail 'refused relaunch changed the task record'
+cmp "$CASE/claim.before" "$CASE/pool/1/.fm-slot-owner" || fail 'refused relaunch changed the slot claim'
+pass 'unsupported Paseo relaunch refuses without touching its claim or record'
+
 make_case conditional-race
 touch "$CASE/lease-race"
 if run_return > "$CASE/output" 2>&1; then fail 'conditional return accepted successor allocation'; fi
@@ -237,6 +267,9 @@ fm_test_spawn_brief "$HOME_DIR" replacement
 fm_test_run_spawn "$HOME_DIR" "$PROJ" "$FB" replacement "$PROJ" --backend paseo --mode no-mistakes --yolo off > "$CASE/output" || fail "reclaimed retry failed: $(cat "$CASE/output")"
 assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" 'dead record not retained'
 assert_grep "worktree=$WT" "$HOME_DIR/state/replacement.meta" 'retry did not acquire freed matching slot'
+gen=$(grep '^spawn_gen=' "$HOME_DIR/state/replacement.meta" | cut -d= -f2-)
+assert_grep "lease_gen=$gen" "$HOME_DIR/state/replacement.meta" 'fresh spawn did not record its lease allocation generation'
+assert_grep "lease_gen=$gen" "$CASE/pool/1/.fm-slot-owner" 'fresh claim did not record its lease allocation generation'
 cmp "$CASE/backlog.before" "$HOME_DIR/data/backlog.md" || fail 'pool-full recovery closed backlog'
 pass 'wrapped pool-full error reclaims only safe matching copy and retries successfully'
 

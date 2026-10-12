@@ -181,8 +181,8 @@
 # Usage: fm-teardown.sh <task-id> [--force] [--legacy-record] [--return-copy]
 #   --return-copy returns only a positively owned, clean, fully pushed Treehouse
 #     copy whose Paseo endpoint is proven gone, with no live cwd/open-file processes or
-#     active/unknown pipeline. A matching task/home/spawn_gen claim and durable
-#     native lease are required; return compares the exact lease ID under the
+#     active/unknown pipeline. A matching task/home/spawn_gen claim, durable
+#     native lease, and its lease_gen allocation generation are required; return compares the exact lease ID under the
 #     allocator lock, without --force. Legacy process leases remain retained
 #     for reconciliation.
 #     It keeps the task, status, decisions and backlog.
@@ -3456,7 +3456,7 @@ remove_secondmate_registry_entry() {
 # implementation as teardown, with stricter automatic gates and no lifecycle
 # cleanup. The regular teardown below still owns record/backlog retirement.
 return_dead_task_copy() {
-  local marker generation home claim_home dirty unpushed branch overview selection rest out tmp live_pids native
+  local marker generation lease_gen home claim_home dirty unpushed branch overview selection rest out tmp live_pids native
   if [ "$BACKEND" != paseo ] || [ "$KIND" = secondmate ] || \
     ! fm_treehouse_pool_slot "$PROJ" "$WT"; then
     echo "REFUSED: $ID has no supported recovery-grade Treehouse copy identity" >&2
@@ -3478,8 +3478,12 @@ return_dead_task_copy() {
   }
   case "$native" in lease:*) TEARDOWN_NATIVE_LEASE_ID=${native#lease:} ;; *)
     echo "REFUSED: $ID has no conditional native task lease; copy retained" >&2; return 1 ;; esac
+  lease_gen=$(fm_backend_meta_exact_value "$META" lease_gen) && \
+    [ "$(fm_backend_meta_exact_value "$marker" lease_gen)" = "$lease_gen" ] || {
+      echo "REFUSED: $ID's slot claim does not prove the lease allocation generation; copy retained" >&2; return 1;
+    }
   [ "$(fm_treehouse_slot_native_identity "$WT")" = "$native" ] && \
-    [ "$(fm_treehouse_slot_native_holder "$WT")" = "$(fm_treehouse_task_lease_holder "$ID" "$FM_HOME" "$generation")" ] || {
+    [ "$(fm_treehouse_slot_native_holder "$WT")" = "$(fm_treehouse_task_lease_holder "$ID" "$FM_HOME" "$lease_gen")" ] || {
       echo "REFUSED: $ID's native allocation changed or is unprovable; copy retained" >&2; return 1;
     }
   require_exclusive_task_worktree_slot || return 1
@@ -3526,8 +3530,9 @@ return_dead_task_copy() {
   unpushed=$(git -C "$WT" log --oneline HEAD --not --remotes --) || return 1
   [ -z "$unpushed" ] || return 1
   validate_worktree_teardown_safety || return 1
-  [ "$(fm_treehouse_slot_native_identity "$WT")" = "$native" ] && \
-    [ "$(fm_treehouse_slot_native_holder "$WT")" = "$(fm_treehouse_task_lease_holder "$ID" "$FM_HOME" "$generation")" ] || return 1
+  [ "$(fm_backend_meta_exact_value "$marker" lease_gen)" = "$lease_gen" ] && \
+    [ "$(fm_treehouse_slot_native_identity "$WT")" = "$native" ] && \
+    [ "$(fm_treehouse_slot_native_holder "$WT")" = "$(fm_treehouse_task_lease_holder "$ID" "$FM_HOME" "$lease_gen")" ] || return 1
   tmp="$META.return-copy.${BASHPID:-$$}"
   out=$(git -C "$WT" rev-parse HEAD) || return 1
   awk '$0 !~ /^(worktree|worktree_state|returned_worktree|returned_head|returned_branch|returned_native_owner)=/' "$META" > "$tmp" || return 1

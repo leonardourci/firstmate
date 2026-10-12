@@ -87,6 +87,8 @@ On a definite full-pool error, Firstmate attempts a bounded recovery of this hom
 The existing inactive reconciliation also releases eligible dead-task copies while keeping their task records, status history, decisions, and backlog items.
 Recovery retains copies with uncommitted or untracked work, unpushed commits, active processes or pipelines, ambiguous endpoint inventories, or claims that do not prove the owning home and current spawn generation.
 New Paseo allocations hold durable native task leases; automatic recovery requires their matching lease identity.
+The lease holder names the allocation generation (`lease_gen`) recorded in the task record and slot claim at the fresh spawn; a relaunch refreshes only the runtime `spawn_gen` and carries `lease_gen` forward.
+Other backends keep interactive process allocations, whose claims record no native fingerprint, so a lapsed process lease never blocks ordinary teardown.
 Older process allocations or claims without this evidence remain retained for ordinary operator reconciliation.
 Copy-only recovery and its interrupted-return journal are owned by [`fm-teardown.sh`](../bin/fm-teardown.sh) `--return-copy`; returning a copy does not declare its task landed or complete.
 Pool limits are never raised automatically; the allocator message leaves increasing `max_trees` as an explicit operator option.

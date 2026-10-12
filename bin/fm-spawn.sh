@@ -1242,6 +1242,7 @@ SPAWN_FRESH_COMMIT_PENDING=0
 SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
 SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
+SPAWN_LEASE_GEN=
 SPAWN_TREEHOUSE_PROJECT_LOCK=
 SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
 SPAWN_SLOT_CLAIMED=0
@@ -4521,6 +4522,7 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
       echo "error: could not claim Treehouse pool slot $WT for task $ID; refusing to launch a worker whose slot cannot later be proved to be its own; inspect window $T" >&2
       exit 1
     fi
+    [ "$BACKEND" != paseo ] || SPAWN_LEASE_GEN=$SPAWN_GEN
     SPAWN_SLOT_CLAIMED=1
   fi
 fi
@@ -5076,7 +5078,8 @@ if [ "$RELAUNCH" -eq 1 ] && [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ] 
     mine|absent) ;;
     *) echo "error: task $ID's copy has an incompatible slot claim; refusing relaunch" >&2; exit 1 ;;
   esac
-  fm_treehouse_slot_owner_claim "$WT" "$ID" "$FM_HOME" "$SPAWN_GEN" || exit 1
+  fm_treehouse_slot_owner_claim "$WT" "$ID" "$FM_HOME" "$SPAWN_GEN" \
+    "$(fm_meta_get "$RELAUNCH_META" lease_gen)" || exit 1
 fi
 SPAWN_META_PATH="$STATE/$ID.meta"
 if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
@@ -5120,6 +5123,7 @@ preserve_relaunch_meta() {
   [ -z "$WORKER_ACCOUNT_PROVIDER" ] || echo "account_provider=$WORKER_ACCOUNT_PROVIDER"
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
+  [ -z "$SPAWN_LEASE_GEN" ] || echo "lease_gen=$SPAWN_LEASE_GEN"
   # Default-off writes no traceparent= line.
   # backend= is written only for a non-default (non-tmux) backend, so the
   # default path's meta stays byte-identical (absent backend= means tmux;

@@ -1560,7 +1560,8 @@ fm_treehouse_slot_native_holder() { # <worktree>
 #
 # Paseo spawns and secondmate homes reserve durable native leases. Other
 # session backends retain their interactive process allocation. The claim binds
-# task/home/spawn generation and, when known, the native allocation fingerprint.
+# task/home/spawn generation and, for a durable lease only, the native
+# allocation fingerprint and the lease's allocation generation.
 # Copy-only recovery requires a matching durable task lease and conditionally
 # returns its exact lease ID, preventing stale records from returning a successor.
 # Legacy process/generationless claims are retained for operator reconciliation.
@@ -1581,8 +1582,12 @@ fm_treehouse_slot_owner_marker() {  # <worktree>
 # The rename is atomic, so a reader either sees the old claim or the new one.
 # New spawns also bind spawn_gen; legacy callers may omit it, but automatic
 # dead-copy recovery requires exact generation evidence (fm-teardown.sh).
-fm_treehouse_slot_owner_claim() {  # <worktree> <task-id> <home> [spawn-gen]
-  local worktree=$1 id=$2 home=$3 generation=${4:-} marker tmp native=
+# A durable lease's holder names its allocation generation (lease_gen), fixed
+# at the fresh spawn and carried unchanged across runtime spawn_gen refreshes.
+# Only durable lease identities are fingerprinted: a process lease lapses with
+# its worker, so recording one would make the claim unprovable at teardown.
+fm_treehouse_slot_owner_claim() {  # <worktree> <task-id> <home> [spawn-gen] [lease-gen]
+  local worktree=$1 id=$2 home=$3 generation=${4:-} lease_gen=${5:-${4:-}} marker tmp native=
   [ -n "$id" ] || return 1
   marker=$(fm_treehouse_slot_owner_marker "$worktree") || return 1
   # Only a plain claim file may be replaced: renaming onto a directory would
@@ -1595,8 +1600,9 @@ fm_treehouse_slot_owner_claim() {  # <worktree> <task-id> <home> [spawn-gen]
     native=$(fm_treehouse_slot_native_identity "$worktree" 2>/dev/null) || native=
     case "$native" in
       lease:*)
-        [ "$(fm_treehouse_slot_native_holder "$worktree")" = "$(fm_treehouse_task_lease_holder "$id" "$home" "$generation")" ] || return 1
+        [ "$(fm_treehouse_slot_native_holder "$worktree")" = "$(fm_treehouse_task_lease_holder "$id" "$home" "$lease_gen")" ] || return 1
         ;;
+      *) native= ;;
     esac
   fi
   tmp="$marker.tmp.${BASHPID:-$$}"
@@ -1605,7 +1611,7 @@ fm_treehouse_slot_owner_claim() {  # <worktree> <task-id> <home> [spawn-gen]
     printf 'task=%s\n' "$id"
     printf 'home=%s\n' "$home"
     [ -z "$generation" ] || printf 'spawn_gen=%s\n' "$generation"
-    [ -z "$native" ] || printf 'native_owner=%s\n' "$native"
+    [ -z "$native" ] || printf 'native_owner=%s\nlease_gen=%s\n' "$native" "$lease_gen"
     :
   } > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
   mv -f "$tmp" "$marker" 2>/dev/null || { rm -f "$tmp"; return 1; }
