@@ -1099,3 +1099,63 @@ test_kill_is_best_effort_when_terminal_kill_fails
 test_list_live_filters_by_name_prefix
 test_secondmate_spawn_refuses_explicit_paseo_only
 test_branch_dispatch_claims_paseo_stale_wake
+
+# The live guard's cleanup uses actual creation receipts, not workspace labels.
+# These cases invoke that public helper against inventories through the CLI fake.
+test_live_cleanup_ownership() (
+  local dir="$TMP_ROOT/live-cleanup" fb list
+  mkdir -p "$dir/owned/project" "$dir/outside"
+  fb=$(make_paseo_fakebin "$dir")
+  mkdir -p "$dir/responses"
+  export PATH="$fb:$PATH" FM_PASEO_LOG="$dir/log" FM_PASEO_RESPONSES="$dir/responses"
+  # shellcheck source=bin/backends/paseo.sh
+  . "$ROOT/bin/backends/paseo.sh"
+  # shellcheck source=tests/paseo-live-helpers.sh
+  . "$ROOT/tests/paseo-live-helpers.sh"
+  printf '{"workspaceId":"wks_created"}\n' > "$dir/receipt"
+  for scenario in outside duplicate malformed unavailable; do
+    rm -f "$dir/responses/.count" "$dir/log"
+    case "$scenario" in
+      outside) list=$(jq -n --arg cwd "$dir/outside" '[{workspaceId:"wks_created",cwd:$cwd}]') ;;
+      duplicate) list=$(jq -n --arg cwd "$dir/owned/project" '[{workspaceId:"wks_created",cwd:$cwd},{workspaceId:"wks_created",cwd:$cwd}]') ;;
+      malformed) list='[{"workspaceId":"wks_created"}]' ;;
+      unavailable) list='{}' ;;
+    esac
+    printf '%s\n' "$list" > "$dir/responses/1.out"
+    FM_TEST_PASEO_CLEANED=0
+    if fm_test_paseo_cleanup_live "$dir/owned" "$dir/receipt" '' fm-test > "$dir/output" 2>&1; then
+      fail "live cleanup accepted $scenario workspace inventory"
+    fi
+    assert_no_grep 'archive' "$dir/log" "live cleanup mutated $scenario workspace"
+  done
+  rm -f "$dir/responses/.count" "$dir/log"
+  jq -n --arg cwd "$dir/owned/project" '[{workspaceId:"wks_created",cwd:$cwd},{workspaceId:"wks_other",cwd:$cwd}]' > "$dir/responses/1.out"
+  : > "$dir/responses/2.out"
+  FM_TEST_PASEO_CLEANED=0
+  fm_test_paseo_cleanup_live "$dir/owned" "$dir/receipt" '' fm-test || fail 'created workspace was not cleaned'
+  fm_test_paseo_cleanup_live "$dir/owned" "$dir/receipt" '' fm-test || fail 'repeat cleanup failed'
+  [ "$(wc -l < "$dir/log" | tr -d ' ')" = 2 ] || fail 'cleanup was executed more than once'
+  assert_contains "$(cat "$dir/log")" $'\x1fworkspace\x1farchive\x1fwks_created' 'created ID was not the cleanup target'
+  assert_no_grep 'delete' "$dir/log" 'cleanup deleted a project'
+  assert_no_grep 'wks_other' "$dir/log" 'cleanup touched an unrelated workspace'
+  rm -f "$dir/responses/.count" "$dir/log"
+  printf '[]\n' > "$dir/responses/1.out"
+  FM_TEST_PASEO_CLEANED=0
+  fm_test_paseo_cleanup_live "$dir/owned" "$dir/receipt" '' fm-test || fail 'absent created workspace was not idempotent'
+  assert_no_grep 'archive' "$dir/log" 'absent workspace caused a mutation'
+  pass 'live cleanup requires created ID and isolated cwd, retains unsafe inventory, runs once, and never deletes projects'
+  fm_fake_exit0 "$fb" treehouse
+  rm -f "$dir/log" "$dir/responses/.count"
+  local rc
+  FM_TREEHOUSE_PASEO_HOME='' FM_TREEHOUSE_PASEO_LIVE=1 PASEO_WORKSPACE_ID=wks_real PASEO_AGENT_ID=real \
+    FM_HOME="$dir/ambient-home" FM_STATE_OVERRIDE="$dir/ambient-state" \
+    bash "$ROOT/tests/fm-treehouse-paseo-live.test.sh" > "$dir/output" 2>&1
+  rc=$?
+  [ "$rc" != 0 ] || fail 'live guard accepted a missing isolated daemon home'
+  assert_grep 'separate test daemon home' "$dir/output" 'missing isolation diagnostic'
+  [ ! -s "$dir/log" ] || fail 'live guard contacted a daemon without isolation'
+  assert_absent "$dir/ambient-home" 'live guard wrote ambient home'
+  assert_absent "$dir/ambient-state" 'live guard wrote ambient state'
+  pass 'live guard refuses without explicit isolated home before any daemon contact or ambient home mutation'
+)
+test_live_cleanup_ownership

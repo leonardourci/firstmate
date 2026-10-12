@@ -2017,6 +2017,11 @@ The real smoke proves daemon reachability, shared-workspace creation and adoptio
 
 ### Treehouse allocation and rollback guard
 
+The current guard requires `FM_TREEHOUSE_PASEO_HOME` selecting an empty, separately started disposable daemon home; it refuses an occupied inventory and never starts a daemon itself.
+Run `FM_TREEHOUSE_PASEO_HOME=/path/to/disposable-daemon-home bash tests/fm-treehouse-paseo-live.test.sh` to refresh this evidence.
+Cleanup archives only the run's recorded created workspace after checking its physical directory, runs once, and keeps the project record.
+The dated result below predates this isolation requirement and is not a fresh pass of the current guard.
+
 On 2026-10-12, `bash tests/fm-treehouse-paseo-live.test.sh` passed with Treehouse v2.3.0 and Paseo 0.10.3 against a disposable repository, isolated pool root, and test-owned terminals.
 The daemon was already reachable; the guard did not start or restart it.
 The exact pass output was:
