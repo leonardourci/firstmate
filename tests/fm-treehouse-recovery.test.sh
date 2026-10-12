@@ -325,3 +325,26 @@ fm_test_run_spawn "$HOME_DIR" "$PROJ" "$FB" successful-command "$PROJ" --backend
 [ ! -f "$CASE/returns" ] || fail 'successful command noise triggered pool recovery'
 [ ! -f "$CASE/kills" ] || fail 'successful acquisition endpoint was closed'
 pass 'error-like output without a completed nonzero command cannot trigger recovery or cleanup'
+
+make_case abort-after-lease
+rm "$HOME_DIR/state/dead.meta" "$CASE/pool/1/.fm-slot-owner"
+touch "$CASE/freed"
+fm_test_spawn_brief "$HOME_DIR" aborted
+printf 'You are in a disposable git worktree of project, at a detached HEAD on a clean copy of its base branch.\nBase branch: missing-base\n' >> "$HOME_DIR/data/aborted/brief.md"
+if fm_test_run_spawn "$HOME_DIR" "$PROJ" "$FB" aborted "$PROJ" --backend paseo --mode no-mistakes --yolo off --base-branch missing-base > "$CASE/output"; then fail 'missing base must abort spawn'; fi
+[ ! -e "$HOME_DIR/state/aborted.meta" ] || fail 'aborted spawn published a record'
+assert_grep 'if-lease-id fixture-new' "$CASE/returns" 'aborted spawn did not conditionally return its lease'
+[ "$(jq -r '.worktrees[0].leased // false' "$CASE/pool/treehouse-state.json")" = false ] || fail 'aborted spawn leaked its durable lease'
+[ ! -e "$CASE/pool/1/.fm-slot-owner" ] || fail 'aborted spawn left its slot claim'
+pass 'aborted spawn returns its own unused durable lease by exact lease ID'
+
+make_case abort-return-refused
+rm "$HOME_DIR/state/dead.meta" "$CASE/pool/1/.fm-slot-owner"
+touch "$CASE/freed" "$CASE/return-error"
+fm_test_spawn_brief "$HOME_DIR" aborted
+printf 'You are in a disposable git worktree of project, at a detached HEAD on a clean copy of its base branch.\nBase branch: missing-base\n' >> "$HOME_DIR/data/aborted/brief.md"
+if fm_test_run_spawn "$HOME_DIR" "$PROJ" "$FB" aborted "$PROJ" --backend paseo --mode no-mistakes --yolo off --base-branch missing-base > "$CASE/output"; then fail 'missing base must abort spawn'; fi
+assert_grep 'retains durable lease fixture-new' "$CASE/output" 'unreturned lease not reported'
+[ "$(jq -r '.worktrees[0].lease_id' "$CASE/pool/treehouse-state.json")" = fixture-new ] || fail 'refused return changed the lease'
+assert_grep 'task=aborted' "$CASE/pool/1/.fm-slot-owner" 'refused return dropped ownership evidence'
+pass 'refused abort return keeps lease and claim and names the lease'

@@ -1387,6 +1387,27 @@ spawn_abort_cleanup() {
   # already released that lock and leaves the claim for the next spawn's
   # atomic replacement rather than racing it. The release itself never removes
   # another task's claim.
+  # A durable Paseo lease outlives this process, so a fresh copy this spawn
+  # leased under its own holder is conditionally returned by exact lease ID.
+  # Treehouse's non-forced return refuses dirt; any unproved case keeps the
+  # lease and claim and names the lease for the operator.
+  if [ "${RELAUNCH:-0}" -eq 0 ] && [ -n "${allocation_holder:-}" ] && [ -n "${WT:-}" ] &&
+    [ "$SPAWN_LAUNCH_SENT" = 0 ] &&
+    [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] &&
+    fm_treehouse_pool_slot "$PROJ_ABS" "$WT" &&
+    [ "$(fm_treehouse_slot_native_holder "$WT" 2>/dev/null)" = "$allocation_holder" ]; then
+    abort_lease=$(fm_treehouse_slot_native_identity "$WT" 2>/dev/null) || abort_lease=
+    abort_lease=${abort_lease#lease:}
+    if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ] && [ -n "$abort_lease" ] &&
+      [ -z "$(git -C "$WT" status --porcelain --untracked-files=all 2>/dev/null || echo unknown)" ] &&
+      (cd "$PROJ_ABS" && treehouse return --if-lease-id "$abort_lease" "$WT") >&2; then
+      echo "spawn: returned task $ID's unused leased copy $WT (lease $abort_lease)" >&2
+      SPAWN_SLOT_CLAIMED=1
+    else
+      echo "warning: task $ID's aborted spawn retains durable lease ${abort_lease:-unknown} (holder $allocation_holder) on $WT; inspect it, then return it with 'treehouse return --if-lease-holder $allocation_holder $WT'" >&2
+      SPAWN_SLOT_CLAIMED=0
+    fi
+  fi
   if [ "$SPAWN_SLOT_CLAIMED" = 1 ] && [ -n "${WT:-}" ] &&
     [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] &&
     fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
