@@ -225,6 +225,20 @@ HARNESS=$(meta_value harness)
 REMOTE_HOST=$(meta_value remote_host)
 [ -n "$KIND" ] || KIND=ship
 
+# Copy-return receipts deliberately carry no live worktree path. Never use the
+# historical returned_worktree to read a slot another task may now own.
+case "$(meta_value worktree_state)" in
+  returning) emit blocked none "copy return incomplete; task and backlog retained for reconciliation" ;;
+  returned)
+    receipt_line=$(status_current_line "$LOG" "$KIND")
+    case "$(status_line_verb "$receipt_line")" in
+      needs-decision) emit parked status-log "$(status_line_note "$receipt_line"); copy returned to pool, decision retained" ;;
+      blocked) emit blocked status-log "$(status_line_note "$receipt_line"); copy returned to pool, blocker retained" ;;
+    esac
+    emit unknown none "copy returned to pool; task and backlog retained"
+    ;;
+esac
+
 # A torn-down (or never-created) worktree has no current state to read. A
 # remote secondmate's recorded worktree is a path on ITS host, so the local
 # probe proves nothing for it - the remote arm below reads the true source.

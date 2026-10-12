@@ -8,6 +8,9 @@
 #
 # This is an adjunct to the existing watcher poll loop and session-start path,
 # not a watcher, daemon, PR poll, or forge client of its own.
+# Each due direct report also attempts copy-only dead-endpoint reconciliation
+# through fm-treehouse-recover.sh; its safety and returned-copy state are owned
+# by fm-teardown.sh --return-copy, independently of terminal-outcome delivery.
 # In a secondmate home every `scan` invocation, which is every watcher poll,
 # first runs the LEDGER-FIRST parent delivery: a direct child whose status
 # ledger ends in a whole `done:` or `failed:` line has stated its own outcome,
@@ -559,6 +562,11 @@ reconcile_direct_child() { # <id> <meta> <secondmate-id-or-empty> <timeout>
   fm_lock_acquire_wait "$lock" || return 1
   reconcile_direct_child_locked "$id" "$meta" "$self" "$timeout" || rc=$?
   fm_lock_release "$lock"
+  # Preserve the existing outcome observation before clearing a live copy
+  # identity. Recovery takes project/control/meta locks, so run it only after
+  # releasing this reader's meta lock to avoid lock inversion.
+  fm_run_timed "$timeout" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    "$SCRIPT_DIR/fm-treehouse-recover.sh" task "$id" >&2 || true
   return "$rc"
 }
 

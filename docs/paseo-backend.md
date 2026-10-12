@@ -81,6 +81,16 @@ Because capture strips styling, the capability descriptor declares `styled=0`, a
 A terminal's `cwd` field in `terminal ls` is creation-time-frozen and never follows the foreground subshell opened by `treehouse get`.
 Spawn-time worktree discovery therefore sends begin and end markers around `pwd`, captures the marked block, and joins wrapped path lines, exactly like cmux and zellij.
 
+A failed Treehouse allocation reports the allocator's captured output promptly and closes only the terminal created for that failed spawn when its exact identity and project cwd still match.
+A cleanup failure is reported with the retained endpoint, and a pre-existing endpoint or acquired copy is preserved.
+On a definite full-pool error, Firstmate attempts a bounded recovery of this home's recorded dead Paseo tasks and retries once only after a matching slot was safely returned.
+The existing inactive reconciliation also releases eligible dead-task copies while keeping their task records, status history, decisions, and backlog items.
+Recovery retains copies with uncommitted or untracked work, unpushed commits, active processes or pipelines, ambiguous endpoint inventories, or claims that do not prove the owning home and current spawn generation.
+New Paseo allocations hold durable native task leases; automatic recovery requires their matching lease identity.
+Older process allocations or claims without this evidence remain retained for ordinary operator reconciliation.
+Copy-only recovery and its interrupted-return journal are owned by [`fm-teardown.sh`](../bin/fm-teardown.sh) `--return-copy`; returning a copy does not declare its task landed or complete.
+Pool limits are never raised automatically; the allocator message leaves increasing `max_trees` as an explicit operator option.
+
 Cleanup closes only the task's tab with `terminal kill`; sibling task tabs stay alive.
 It is best-effort like every backend's kill, so an already-gone target stays quiet.
 When the closed tab was the last one in a per-project shared workspace for one of the home's own clones under `projects/`, cleanup archives that workspace, provided it carries Firstmate's own title, is not Firstmate's own workspace, and no Paseo agent works in its folder, because archiving a workspace also archives the agents it owns.

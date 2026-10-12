@@ -474,6 +474,7 @@ A backend spawn refusal from a missing dependency, version gate, or unauthentica
 Task meta records `backend=` only for a non-default backend; an absent `backend=` means `tmux`, preserving existing default-path meta files.
 
 - Every new task records `endpoint_task_id=` as the cleanup binding between the metadata filename and its opaque runtime endpoint.
+- Copy-only recovery receipts and historical copy identities are owned by [`fm-teardown.sh`](../bin/fm-teardown.sh) `--return-copy`; status readers never follow those historical paths as live worktrees.
 
 - A herdr task additionally records `herdr_session=`, `herdr_workspace_id=`, `herdr_tab_id=`, and `herdr_pane_id=`.
 
