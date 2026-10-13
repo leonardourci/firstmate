@@ -49,15 +49,17 @@
 # kill one second after the budget remains as a backstop for a scan wedged in
 # an unbounded wait (for example a live-held wake-queue lock), so the clean
 # deadline path is not racing its own backstop. Copy recovery for each child
-# whose crew state this scan read and whose outcome it recorded runs after the
-# scan, outside that backstop, with its own fixed 50s
+# whose outcome this scan durably recorded (after a completed crew-state read,
+# or a complete terminal ledger line recorded by the ledger-first owner)
+# runs after the scan, outside that backstop, with its own fixed 50s
 # bound rather than the leftover budget; none starts after the first 50s.
 #
 # It considers only a direct ordinary crewmate whose newest meta, status, or
 # turn-ended mtime is older than that interval and whose last status is not
 # captain-held. In a secondmate home a child whose ledger already ends in a
-# terminal done or failed line belongs to the ledger-first path above and is
-# skipped here, so one outcome is never reported twice. It then uses
+# terminal done or failed line belongs to the ledger-first path above; the scan
+# only re-runs that owner under the meta lock it already holds, so one outcome
+# is never reported twice. It then uses
 # fm-crew-state.sh as the sole current-state source.
 # Only a done or failed state is suspicious enough to create a durable terminal
 # outcome record or wake the supervisor.
