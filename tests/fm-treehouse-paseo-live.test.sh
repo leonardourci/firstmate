@@ -12,12 +12,12 @@ unset PASEO_WORKSPACE_ID PASEO_AGENT_ID PASEO_HOST PASEO_HOME TREEHOUSE_ROOT
 if ! command -v paseo >/dev/null 2>&1 && [ -x /Applications/Paseo.app/Contents/Resources/bin/paseo ]; then
   export PATH="/Applications/Paseo.app/Contents/Resources/bin:$PATH"
 fi
+fm_live_gate opt-in FM_TREEHOUSE_PASEO_LIVE paseo jq treehouse
 # A generic FM_LIVE request must not opt this daemon-mutating guard in.
 [ "${FM_TREEHOUSE_PASEO_LIVE:-0}" = 1 ] || {
   echo 'skip: live: opt-in; set FM_TREEHOUSE_PASEO_LIVE=1 with an isolated test home'
   exit 0
 }
-fm_live_gate opt-in FM_TREEHOUSE_PASEO_LIVE paseo jq treehouse
 if [ -z "${FM_TREEHOUSE_PASEO_HOME:-}" ]; then
   if [ "${FM_TREEHOUSE_PASEO_LIVE:-${FM_LIVE:-0}}" = 1 ]; then
     fail 'set FM_TREEHOUSE_PASEO_HOME to a separate test daemon home'
