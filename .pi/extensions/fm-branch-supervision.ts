@@ -1676,14 +1676,20 @@ ${context.command}
     if (!(await enqueueDelivery(() => actingAsOwner(promptGeneration)))) return;
     if (promptGeneration !== generation || !currentMainSession || !collectCurrentMainDialog()) return;
 
-    // This event is Pi's authoritative complete current prompt. At this point
-    // SessionManager still contains only the preceding dialog, so relying on
-    // getEntries() here loses the captain request that the next wake may answer.
+    // Pi 1.2 custom-message runs have no prompt. Track a dedicated processing
+    // run for away suppression, but never mirror its custom content as dialog.
+    // This structural view also accepts Pi's earlier prompt-only declaration.
+    const opening: { prompt?: string; message?: { content: unknown } } = event;
+    processingOpenedThisRun = queuedProcessingContent !== null &&
+      (opening.prompt ?? opening.message?.content) === queuedProcessingContent;
+    if (!("prompt" in event)) return;
+
+    // The user event is Pi's authoritative complete current prompt. At this
+    // point SessionManager still contains only the preceding dialog, so relying
+    // on getEntries() here loses the captain request that the next wake may answer.
     // Stage it verbatim and remember the future persisted index for turn_end's
     // duplicate suppression. Operational extension injections are not dialog.
-    const prompt = event.prompt;
-    processingOpenedThisRun = queuedProcessingContent !== null && prompt === queuedProcessingContent;
-    const trimmed = prompt.trim();
+    const trimmed = event.prompt.trim();
     if (!trimmed || isOperationalUserText(trimmed)) return;
     const file = currentMainSession.getSessionFile() ?? "";
     const index = mirrorCollection.collectAnchor?.index ?? currentMainSession.getEntries().length;
