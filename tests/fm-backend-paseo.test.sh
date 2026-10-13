@@ -1157,5 +1157,10 @@ test_live_cleanup_ownership() (
   assert_absent "$dir/ambient-home" 'live guard wrote ambient home'
   assert_absent "$dir/ambient-state" 'live guard wrote ambient state'
   pass 'live guard refuses without explicit isolated home before any daemon contact or ambient home mutation'
+  FM_TREEHOUSE_PASEO_HOME='' FM_TREEHOUSE_PASEO_LIVE='' FM_LIVE=1 \
+    bash "$ROOT/tests/fm-treehouse-paseo-live.test.sh" > "$dir/opt-in" 2>&1 || fail 'unrequested live guard did not skip'
+  assert_grep 'opt-in' "$dir/opt-in" 'generic FM_LIVE bypassed the explicit opt-in'
+  [ ! -s "$dir/log" ] || fail 'unrequested live guard contacted a daemon'
+  pass 'live guard stays opt-in even under generic FM_LIVE'
 )
 test_live_cleanup_ownership
