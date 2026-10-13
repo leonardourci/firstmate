@@ -19,10 +19,12 @@
 // queued while main is streaming joins the running run without ever raising
 // before_agent_start, so waiting on that event stalls every later close.
 // Consumption is tracked only so a replacement can replay a follow-up Pi had
-// not consumed. An idle main consumes at before_agent_start; a streaming main
-// consumes at the user message_start carrying the exact wake text; either
-// event finishes the pending record, and a still-unconsumed record rides the
-// replacement handoff.
+// not consumed. Consumption requires the exact wake text in a prompt-bearing
+// user before_agent_start or a user message_start. Pi 1.2 custom-message runs
+// have no prompt and never consume a user wake, even with identical content.
+// Either user event finishes the pending record, and a still-unconsumed record
+// rides the replacement handoff (regression: tests/fm-pi-watch-extension.test.sh,
+// test_pi_streaming_time_delivery_keeps_the_successor_chain).
 //
 // Postures (stated once here; docs/pi-supervision-branch.md "Postures"):
 // the away-posture record state/.afk-contract is read as a file at every
@@ -649,8 +651,7 @@ export default function (pi: ExtensionAPI) {
     return generationIsLive(owner);
   }
 
-  // Pi consumed a main follow-up: an idle main at before_agent_start, a
-  // streaming main at the user message_start that joins the running run.
+  // Consumption and replacement replay follow this file's header contract.
   function consumeWake(owner: SessionGeneration, text: string): void {
     for (const [token, wake] of owner.unconsumedWakes) {
       if (wake.content !== text) continue;
