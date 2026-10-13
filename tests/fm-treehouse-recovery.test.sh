@@ -394,6 +394,21 @@ assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" 'observed outc
 [ "$(outcome_receipts)" = 1 ] || fail 'failed outcome lost after timed-out observation'
 pass 'timed-out crew-state observation keeps its copy until a later read records the outcome'
 
+for verb in 'done' failed; do
+  make_case "secondmate-ledger-$verb"
+  printf 'mate\n' > "$HOME_DIR/.fm-secondmate-home"
+  printf '%s [at=1]: child outcome' "$verb" > "$HOME_DIR/state/dead.status"
+  printf '#!/usr/bin/env bash\necho "state: unknown source=none detail=ledger owns outcome"\n' > "$FB/observed-state"
+  chmod +x "$FB/observed-state"
+  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_INACTIVE_CREW_STATE_BIN="$FB/observed-state" PATH="$FB:$PATH" bash "$ROOT/bin/fm-inactive-reconcile.sh" scan --startup > "$CASE/output" 2>&1 || true
+  assert_retained "secondmate torn $verb ledger line"
+  printf '\n' >> "$HOME_DIR/state/dead.status"
+  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_INACTIVE_CREW_STATE_BIN="$FB/observed-state" PATH="$FB:$PATH" bash "$ROOT/bin/fm-inactive-reconcile.sh" scan --startup > "$CASE/output" 2>&1 || true
+  assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" "secondmate complete $verb ledger line did not return copy: $(cat "$CASE/output")"
+  assert_grep "$verb [at=1]: child outcome" "$HOME_DIR/state/dead.status" "secondmate $verb ledger outcome lost"
+done
+pass 'secondmate home returns a dead copy once its ledger states a complete outcome, never on a torn line'
+
 make_case decisions
 printf 'needs-decision [at=1] [key=review-call]: retained question\n' > "$HOME_DIR/state/dead.status"
 cp "$HOME_DIR/state/dead.status" "$CASE/status.before"
