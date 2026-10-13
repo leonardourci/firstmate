@@ -394,20 +394,64 @@ assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" 'observed outc
 [ "$(outcome_receipts)" = 1 ] || fail 'failed outcome lost after timed-out observation'
 pass 'timed-out crew-state observation keeps its copy until a later read records the outcome'
 
-for verb in 'done' failed; do
-  make_case "secondmate-ledger-$verb"
+secondmate_case() { # <name> <ledger-line-without-newline>
+  make_case "$1"
   printf 'mate\n' > "$HOME_DIR/.fm-secondmate-home"
-  printf '%s [at=1]: child outcome' "$verb" > "$HOME_DIR/state/dead.status"
+  printf '%s' "$2" > "$HOME_DIR/state/dead.status"
   printf '#!/usr/bin/env bash\necho "state: unknown source=none detail=ledger owns outcome"\n' > "$FB/observed-state"
   chmod +x "$FB/observed-state"
+}
+
+bind_parent() {
+  mkdir -p "$CASE/parent/state"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$CASE/parent" > "$HOME_DIR/.fm-secondmate-parent"
+}
+
+scan_secondmate() {
   FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_INACTIVE_CREW_STATE_BIN="$FB/observed-state" PATH="$FB:$PATH" bash "$ROOT/bin/fm-inactive-reconcile.sh" scan --startup > "$CASE/output" 2>&1 || true
+}
+
+reported_receipts() {
+  count=0
+  for receipt in "$HOME_DIR/state/terminal-outcomes"/*.reported; do [ ! -f "$receipt" ] || count=$((count + 1)); done
+  echo "$count"
+}
+
+for verb in 'done' failed; do
+  secondmate_case "secondmate-ledger-$verb" "$verb [at=1]: child outcome"
+  bind_parent
+  scan_secondmate
   assert_retained "secondmate torn $verb ledger line"
   printf '\n' >> "$HOME_DIR/state/dead.status"
-  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_INACTIVE_CREW_STATE_BIN="$FB/observed-state" PATH="$FB:$PATH" bash "$ROOT/bin/fm-inactive-reconcile.sh" scan --startup > "$CASE/output" 2>&1 || true
+  lock="$HOME_DIR/state/.meta-dead.lock"
+  bash -c '. "$1/bin/fm-wake-lib.sh"; fm_lock_try_acquire "$2" || exit 1; touch "$3"; sleep 2; fm_lock_release "$2"' bash "$ROOT" "$lock" "$CASE/held" &
+  for _ in $(seq 1 100); do [ ! -f "$CASE/held" ] || break; sleep 0.1; done
+  [ -f "$CASE/held" ] || fail 'meta lock holder did not start'
+  scan_secondmate
+  wait
   assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" "secondmate complete $verb ledger line did not return copy: $(cat "$CASE/output")"
+  assert_grep "child dead $verb: child outcome" "$CASE/parent/state/mate.status" "secondmate $verb outcome not delivered when ledger pass met a busy lock"
+  [ "$(reported_receipts)" = 1 ] || fail "secondmate $verb outcome has no durable receipt"
   assert_grep "$verb [at=1]: child outcome" "$HOME_DIR/state/dead.status" "secondmate $verb ledger outcome lost"
 done
-pass 'secondmate home returns a dead copy once its ledger states a complete outcome, never on a torn line'
+pass 'secondmate home returns a dead copy only after its complete ledger outcome is durably recorded, never on a torn line'
+
+secondmate_case secondmate-ledger-undelivered $'done [at=1]: child outcome\n'
+scan_secondmate
+assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" 'pending ledger outcome did not return copy'
+[ "$(outcome_receipts)" = 1 ] || fail 'undelivered ledger outcome has no pending record'
+bind_parent
+scan_secondmate
+assert_grep 'child dead done: child outcome' "$CASE/parent/state/mate.status" 'pending ledger outcome not delivered after copy return'
+[ "$(reported_receipts)" = 1 ] || fail 'delivered ledger outcome has no reported receipt'
+pass 'pending secondmate ledger outcome is still delivered to the parent after its copy is returned'
+
+secondmate_case secondmate-ledger-rejected $'done [at=1]: PR ready, published for review\n'
+bind_parent
+scan_secondmate
+assert_retained 'rejected secondmate ship done'
+[ "$(outcome_receipts)" = 0 ] && [ "$(reported_receipts)" = 0 ] || fail 'rejected ship done was recorded'
+pass 'secondmate ship done the acceptance gate rejects keeps its copy'
 
 make_case decisions
 printf 'needs-decision [at=1] [key=review-call]: retained question\n' > "$HOME_DIR/state/dead.status"

@@ -436,6 +436,7 @@ report_child_ledger_locked() { # <id> <meta>
   fi
   outcome_key="child-outcome-$id-$state-${fingerprint:0:8}"
   ensure_record "$fingerprint" "$id" "$incarnation" "$state" "$outcome_key" direct upstream "$pr" || return 1
+  OUTCOME_OBSERVED=1
   [ -n "$RECORD_PENDING" ] || return 0
   last_status_line "$status" previous >/dev/null
   predecessor_head=$(sha256_text "$previous")
@@ -515,7 +516,7 @@ reconcile_direct_child_locked() { # <id> <meta> <secondmate-id-or-empty> <timeou
   if [ -n "$self" ]; then
     child_terminal_ledger_line "$status" >/dev/null
     case "$?" in
-      0) OUTCOME_OBSERVED=1; return 0 ;;
+      0) report_child_ledger_locked "$id" "$meta" || true; return 0 ;;
       2) return 0 ;;
     esac
   fi
@@ -528,7 +529,10 @@ reconcile_direct_child_locked() { # <id> <meta> <secondmate-id-or-empty> <timeou
   last=$(last_status_line "$status")
   if [ -n "$self" ]; then
     child_terminal_ledger_line "$status" >/dev/null
-    case "$?" in 0|2) return 0 ;; esac
+    case "$?" in
+      0) OUTCOME_OBSERVED=0; report_child_ledger_locked "$id" "$meta" || true; return 0 ;;
+      2) OUTCOME_OBSERVED=0; return 0 ;;
+    esac
   fi
   case "$state_line" in
     'state: done '*) state='done' ;;
