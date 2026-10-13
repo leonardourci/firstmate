@@ -14,10 +14,9 @@
 // captain-facing outcome opens one sequence-keyed processing turn on main
 // that stays open until main acknowledges that sequence (see
 // presentUnprocessedOutcomes).
-// Main's captain/assistant dialog is mirrored into the branch as read-only
-// fm-main-mirror context from Pi's
-// before_agent_start prompt and at main's turn_end. Pi-only by construction: this
-// file lives in .pi/extensions, so no
+// Dialog mirroring: docs/pi-supervision-branch.md
+// "How the branch knows what the captain said" owns staging and filtering.
+// Pi-only by construction: this file lives in .pi/extensions, so no
 // other harness ever loads it. Supervision is default-on for every task once
 // this Pi session owns the fleet lock: no captain grant file is required.
 // A broken branch between its bounded recovery probes keeps today's
@@ -516,9 +515,8 @@ function sameOutcome(left: OutcomeRow, right: OutcomeRow): boolean {
 type MirrorCollectionState = {
   collectAnchor: MirrorCursor | null;
   pendingCursor: MirrorCursor | null;
-  // Pi emits before_agent_start before it appends that turn's user message to
-  // SessionManager. The prompt is mirrored from the event immediately, then
-  // this marker suppresses the same persisted entry when turn_end collects it.
+  // Suppress the persisted copy of a staged captain prompt; staging and
+  // filtering follow docs/pi-supervision-branch.md's mirroring contract.
   stagedCaptain: { file: string; index: number; text: string } | null;
   // Set at every main session start, where the branch conversation is
   // replaced too (createBranch). The durable cursor records what the PREVIOUS
@@ -1776,9 +1774,9 @@ ${context.command}
     });
   });
 
-  // before_agent_start stages Pi's authoritative in-flight prompt before
-  // SessionManager persists it. The dispatch handler then collects any newly
-  // persisted dialog immediately before accepting a wake, so all context joins
+  // Staging and filtering follow docs/pi-supervision-branch.md's mirroring
+  // contract. The dispatch handler collects newly persisted dialog immediately
+  // before accepting a wake, so all context joins
   // the serialized chain before that wake's branch prompt. turn_end remains
   // the idle-path mirror flush. The durable cursor advances only in
   // flushMirror after the complete pending batch reaches the branch.
