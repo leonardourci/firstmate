@@ -3501,10 +3501,22 @@ return_dead_task_copy() {
   branch=$(git -C "$WT" symbolic-ref --quiet --short HEAD) || {
     echo "REFUSED: $ID's detached copy has no pipeline attribution; copy retained" >&2; return 1;
   }
-  overview=$(fm_nm_run_bounded "$WT" 5 axi) || {
-    echo "REFUSED: cannot read $ID's pipeline inventory; copy retained" >&2; return 1;
-  }
-  selection=$(fm_nm_select_run "$branch" "$overview" "$WT" 5)
+  if overview=$(fm_nm_run_bounded "$WT" 5 axi); then
+    selection=$(fm_nm_select_run "$branch" "$overview" "$WT" 5)
+  else
+    # The CLI's positive uninitialized-repository response proves no gate owns
+    # this copy. A timeout, missing binary, changed or mixed response does not.
+    rest=$?
+    [ "$rest" = 1 ] || {
+      echo "REFUSED: cannot read $ID's pipeline inventory; copy retained" >&2; return 1;
+    }
+    # shellcheck disable=SC2016 # Match the CLI's literal backtick help text.
+    case "$overview" in
+      "error: repo not initialized (run 'no-mistakes init' first)" | \
+      "error: repo not initialized (run 'no-mistakes init' first)"$'\n''help[1]: Run `no-mistakes init` to set up the gate in this repository') selection=absent ;;
+      *) echo "REFUSED: cannot read $ID's pipeline inventory; copy retained" >&2; return 1 ;;
+    esac
+  fi
   case "$selection" in
     absent) ;;
     selected\|*)

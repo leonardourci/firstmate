@@ -86,6 +86,7 @@ A cleanup failure is reported with the retained endpoint, and a pre-existing end
 On a definite full-pool error, Firstmate attempts a bounded recovery of this home's recorded dead Paseo tasks and retries once only after a matching slot was safely returned.
 The existing inactive reconciliation also releases eligible dead-task copies while keeping their task records, status history, decisions, and backlog items.
 Recovery retains copies with uncommitted or untracked work, unpushed commits, active processes or pipelines, ambiguous endpoint inventories, or claims that do not prove the owning home and current spawn generation.
+Projects that never initialized no-mistakes remain eligible when its CLI positively reports that fact; other unreadable pipeline inventory retains the copy.
 New Paseo allocations hold durable native task leases; automatic recovery requires their matching lease identity.
 The lease holder names the allocation generation (`lease_gen`) recorded in the task record and slot claim at the fresh spawn; a relaunch refreshes only the runtime `spawn_gen` and carries `lease_gen` forward.
 Other backends keep interactive process allocations, whose claims record no native fingerprint, so a lapsed process lease never blocks ordinary teardown.

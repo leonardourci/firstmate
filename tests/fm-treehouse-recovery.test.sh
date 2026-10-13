@@ -109,7 +109,7 @@ SH
 #!/usr/bin/env bash
 case "${1:-}" in
   --version) echo 'no-mistakes version v1.75.2' ;;
-  axi) cat "${TEST_CASE:?}/pipeline" ;;
+  axi) cat "${TEST_CASE:?}/pipeline"; exit "$(cat "$TEST_CASE/pipeline-rc" 2>/dev/null || echo 0)" ;;
   *) ;;
 esac
 SH
@@ -135,6 +135,37 @@ assert_retained() {
   assert_grep "worktree=$WT" "$HOME_DIR/state/dead.meta" "$1 changed live copy identity"
   cmp "$CASE/backlog.before" "$HOME_DIR/data/backlog.md" || fail "$1 changed backlog"
 }
+
+# Direct-PR projects may never initialize a gate. Only its positive response
+# permits return; a failed call with absent/changed/mixed output is not absence.
+for scenario in uninitialized uninitialized-help other-error near-match mixed-error timeout missing-binary empty-error; do
+  make_case "pipeline-$scenario"
+  printf '1\n' > "$CASE/pipeline-rc"
+  printf "%s\n" "error: repo not initialized (run 'no-mistakes init' first)" > "$CASE/pipeline"
+  # shellcheck disable=SC2016 # The fixture pins literal CLI help text.
+  case "$scenario" in
+    uninitialized) ;;
+    uninitialized-help) printf '%s\n' 'help[1]: Run `no-mistakes init` to set up the gate in this repository' >> "$CASE/pipeline" ;;
+    other-error) printf 'error: daemon unavailable\n' > "$CASE/pipeline" ;;
+    near-match) printf 'error: repo not initialized yet\n' > "$CASE/pipeline" ;;
+    mixed-error) printf 'error: daemon unavailable\n' >> "$CASE/pipeline" ;;
+    timeout) printf '124\n' > "$CASE/pipeline-rc" ;;
+    missing-binary) printf '127\n' > "$CASE/pipeline-rc" ;;
+    empty-error) : > "$CASE/pipeline" ;;
+  esac
+  case "$scenario" in
+    uninitialized*)
+      sed 's/mode=no-mistakes/mode=direct-PR/' "$HOME_DIR/state/dead.meta" > "$CASE/meta"
+      mv "$CASE/meta" "$HOME_DIR/state/dead.meta"
+      run_return > "$CASE/output" 2>&1 || fail "$scenario did not permit safe copy return: $(cat "$CASE/output")"
+      assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" "$scenario return receipt missing"
+      cmp "$CASE/backlog.before" "$HOME_DIR/data/backlog.md" || fail "$scenario changed backlog" ;;
+    *)
+      if run_return > "$CASE/output" 2>&1; then fail "$scenario inventory failure permitted return"; fi
+      assert_retained "$scenario" ;;
+  esac
+  pass "pipeline $scenario retains all safety predicates"
+done
 
 for scenario in dirty untracked unpushed live ambiguous malformed claim home generation lease-generation legacy native-generation native-lease native-live process open-file lsof pipeline pipeline-unknown; do
   make_case "$scenario"
