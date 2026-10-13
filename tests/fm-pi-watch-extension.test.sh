@@ -3565,6 +3565,12 @@ if (wakes("signal: streaming chain wake 2") !== 1) throw new Error(`wrong second
 await waitFor(() => arms() === 3, "successor after the second streaming-time delivery");
 if (beforeAgentStarts !== 0) throw new Error(`streaming follow-ups raised before_agent_start ${beforeAgentStarts} times`);
 
+// A custom run carrying the same text is not consumption of the user wake.
+// Only the real user message below consumes it; the second wake must replay.
+handlers.get("before_agent_start")?.({
+  messageType: "custom",
+  message: { role: "custom", customType: "test-custom", content: prompts[1], display: false },
+}, {});
 // The run reaches the first queued follow-up; the second is still queued when
 // the captain replaces the session, so only the second rides the handoff.
 consumeQueued(prompts[0]);
