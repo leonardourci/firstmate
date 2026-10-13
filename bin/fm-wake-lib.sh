@@ -1511,23 +1511,62 @@ fm_treehouse_pool_slot() {  # <project-dir> <worktree>
   [ "$project_common" = "$slot_common" ]
 }
 
+# Native allocation fingerprint for one exact Treehouse slot. A standalone get
+# can replace a process/durable lease without rewriting Firstmate's claim, so
+# task/home/spawn_gen alone cannot prove that the native allocation is unchanged.
+# Unknown schemas or ambiguous entries fail closed. Canonicalizing the one
+# selected path supports pools reached through symlinks without scanning homes.
+fm_treehouse_slot_native_identity() { # <worktree>
+  local wt=$1 slot pool row path
+  wt=$(CDPATH='' cd -- "$wt" 2>/dev/null && pwd -P) || return 1
+  slot=$(dirname "$wt")
+  pool=$(dirname "$slot")
+  [ -f "$pool/treehouse-state.json" ] && [ ! -L "$pool/treehouse-state.json" ] || return 1
+  row=$(jq -ce --arg name "$(basename "$slot")" '
+    [.worktrees[] | select(.name == $name)] |
+    if length == 1 then .[0] else error("ambiguous slot") end
+  ' "$pool/treehouse-state.json" 2>/dev/null) || return 1
+  path=$(printf '%s' "$row" | jq -er '.path | select(type == "string")') || return 1
+  [ "$(CDPATH='' cd -- "$path" 2>/dev/null && pwd -P)" = "$wt" ] || return 1
+  printf '%s' "$row" | jq -er '
+    if .leased == true then
+      .lease_id | select(type == "string" and test("^[A-Za-z0-9_-]+$")) | "lease:" + .
+    elif (.owner_pid | type == "number") and (.owner_pid > 0) and (.owner_pid == (.owner_pid | floor))
+      and (.owner_started_at | type == "number") and (.owner_started_at > 0) and (.owner_started_at == (.owner_started_at | floor)) then
+      "process:" + (.owner_pid | tostring) + ":" + (.owner_started_at | tostring)
+    else error("unproved native allocation") end
+  ' 2>/dev/null
+}
+
+# Lease labels bind one task incarnation to its home without putting a home
+# path into the native allocator's human-facing label.
+fm_treehouse_task_lease_holder() { # <task-id> <home> <spawn-gen>
+  local id=$1 home=$2 generation=$3 hash
+  home=$(CDPATH='' cd -- "$home" 2>/dev/null && pwd -P) || return 1
+  hash=$(printf '%s' "$home" | git hash-object --stdin) || return 1
+  printf 'firstmate-%s-%s-%s' "$hash" "$id" "$generation"
+}
+
+fm_treehouse_slot_native_holder() { # <worktree>
+  local wt=$1 slot pool
+  wt=$(CDPATH='' cd -- "$wt" 2>/dev/null && pwd -P) || return 1
+  slot=$(dirname "$wt"); pool=$(dirname "$slot")
+  # Identity validates the selected entry/path before this field is consumed.
+  case "$(fm_treehouse_slot_native_identity "$wt")" in lease:*) ;; *) return 1 ;; esac
+  jq -er --arg name "$(basename "$slot")" '.worktrees[] | select(.name == $name) | .lease_holder | select(type == "string" and length > 0)' "$pool/treehouse-state.json"
+}
+
 # Slot-owner claim: which task a Treehouse pool slot currently belongs to.
 #
-# Treehouse can record ownership durably: `treehouse get --lease --lease-holder`
-# reserves a slot under a label until `treehouse return --if-lease-holder`
-# releases it, and Firstmate uses exactly that for secondmate homes
-# (bin/fm-home-seed.sh). Crewmate spawns do not take that path: they acquire
-# their slot through the interactive pane-driven `treehouse get`, whose state
-# entry is a live process lease (owner_pid plus owner_started_at, and `treehouse
-# status` reports in-use from the processes actually running under the path).
-# That answers "is anything running here", never "which task owns this", and it
-# is released by the very event that makes a task record stale - the worker
-# exiting - so a slot whose lease has lapsed reads identical whether it is still
-# this task's or has since been handed to another one. Firstmate therefore keeps
-# its own claim on top: one file naming the task that took the slot, written by
-# bin/fm-spawn.sh under the same project lock that allocates the slot and
-# released by bin/fm-teardown.sh when the slot goes back to the pool. Moving
-# crewmate spawns onto the durable lease is separate follow-up work.
+# Paseo spawns and secondmate homes reserve durable native leases. Other
+# session backends retain their interactive process allocation. The claim binds
+# task/home/spawn generation and, for a durable lease only, the native
+# allocation fingerprint and the lease's allocation generation.
+# Copy-only recovery requires a matching durable task lease and conditionally
+# returns its exact lease ID, preventing stale records from returning a successor.
+# Legacy process/generationless claims are retained for operator reconciliation.
+# bin/fm-spawn.sh writes claims under the shared project lock; teardown releases
+# them only after a successful return.
 #
 # The claim lives at <pool>/<slot>/.fm-slot-owner - a sibling of the repo
 # checkout rather than a file inside it - so claiming a slot can never dirty the
@@ -1541,8 +1580,14 @@ fm_treehouse_slot_owner_marker() {  # <worktree>
 
 # Claim a pool slot for a task, replacing whatever the previous holder left.
 # The rename is atomic, so a reader either sees the old claim or the new one.
-fm_treehouse_slot_owner_claim() {  # <worktree> <task-id> <home>
-  local worktree=$1 id=$2 home=$3 marker tmp
+# New spawns also bind spawn_gen; legacy callers may omit it, but automatic
+# dead-copy recovery requires exact generation evidence (fm-teardown.sh).
+# A durable lease's holder names its allocation generation (lease_gen), fixed
+# at the fresh spawn and carried unchanged across runtime spawn_gen refreshes.
+# Only durable lease identities are fingerprinted: a process lease lapses with
+# its worker, so recording one would make the claim unprovable at teardown.
+fm_treehouse_slot_owner_claim() {  # <worktree> <task-id> <home> [spawn-gen] [lease-gen]
+  local worktree=$1 id=$2 home=$3 generation=${4:-} lease_gen=${5:-${4:-}} marker tmp native=
   [ -n "$id" ] || return 1
   marker=$(fm_treehouse_slot_owner_marker "$worktree") || return 1
   # Only a plain claim file may be replaced: renaming onto a directory would
@@ -1551,11 +1596,23 @@ fm_treehouse_slot_owner_claim() {  # <worktree> <task-id> <home>
      && { [ ! -f "$marker" ] || [ -L "$marker" ]; }; then
     return 1
   fi
+  if [ -n "$generation" ]; then
+    native=$(fm_treehouse_slot_native_identity "$worktree" 2>/dev/null) || native=
+    case "$native" in
+      lease:*)
+        [ "$(fm_treehouse_slot_native_holder "$worktree")" = "$(fm_treehouse_task_lease_holder "$id" "$home" "$lease_gen")" ] || return 1
+        ;;
+      *) native= ;;
+    esac
+  fi
   tmp="$marker.tmp.${BASHPID:-$$}"
   rm -f "$tmp" || return 1
   {
     printf 'task=%s\n' "$id"
     printf 'home=%s\n' "$home"
+    [ -z "$generation" ] || printf 'spawn_gen=%s\n' "$generation"
+    [ -z "$native" ] || printf 'native_owner=%s\nlease_gen=%s\n' "$native" "$lease_gen"
+    :
   } > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
   mv -f "$tmp" "$marker" 2>/dev/null || { rm -f "$tmp"; return 1; }
 }

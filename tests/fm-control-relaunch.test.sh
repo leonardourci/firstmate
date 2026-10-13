@@ -868,6 +868,50 @@ SH
   pass "fm-control relaunch: a recorded Claude login is kept while listed with room, a spent or unlisted one gives way to the list, and all spent refuses"
 }
 
+hold_project_lock() {  # <case-dir> <project> <seconds>; prints the holder pid once held
+  local dir=$1 lock
+  lock=$(FM_HOME="$dir/home" bash -c '. "$1/bin/fm-wake-lib.sh"; fm_treehouse_project_lock_path "$2"' bash "$ROOT" "$2") || return 1
+  rm -f "$dir/lock-held"
+  bash -c '. "$1/bin/fm-wake-lib.sh"; fm_lock_try_acquire "$2" || exit 1; : > "$3"; sleep "$4"; fm_lock_release "$2"' \
+    bash "$ROOT" "$lock" "$dir/lock-held" "$3" >/dev/null 2>&1 &
+  for _ in $(seq 1 100); do [ ! -f "$dir/lock-held" ] || break; sleep 0.05; done
+  [ -f "$dir/lock-held" ] || return 1
+  printf '%s\n' "$!"
+}
+
+test_relaunch_does_not_race_an_unrelated_project_lock_holder() {
+  local dir out rc holder id=rl-plock
+  dir=$(new_case plock "$id")
+  add_ship_task "$dir" "$id" claude
+  holder=$(hold_project_lock "$dir" "$dir/proj" 30) || fail "the project lock fixture could not take the lock"
+  out=$(run_control "$dir" "$id" relaunch --note "spawn in progress"); rc=$?
+  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+  expect_code 0 "$rc" "a relaunch outside the pool must not need the Treehouse project lock"$'\n'"$out"
+  pass "fm-control relaunch: a non-pool relaunch succeeds while another allocation holds the project lock"
+}
+
+test_pool_relaunch_waits_for_the_project_lock_around_its_claim_refresh() {
+  local dir out rc holder id=rl-pwait wt gen
+  dir=$(new_case pwait "$id")
+  add_ship_task "$dir" "$id" claude
+  wt="$dir/pool/1/proj"
+  mkdir -p "$dir/pool/1"
+  git -C "$dir/proj" worktree add -q -b "pool-$id" "$wt"
+  jq -n --arg path "$wt" '{worktrees:[{name:"1",path:$path}]}' > "$dir/pool/treehouse-state.json"
+  printf 'task=%s\nhome=%s\nspawn_gen=old\n' "$id" "$dir/home" > "$dir/pool/1/.fm-slot-owner"
+  sed "s@^worktree=.*@worktree=$wt@" "$dir/home/state/$id.meta" > "$dir/meta.tmp"
+  mv "$dir/meta.tmp" "$dir/home/state/$id.meta"
+  printf '%s' "$wt" > "$dir/fake/cwd"
+  holder=$(hold_project_lock "$dir" "$dir/proj" 2) || fail "the project lock fixture could not take the lock"
+  out=$(run_control "$dir" "$id" relaunch --note "allocation finishing"); rc=$?
+  wait "$holder" 2>/dev/null
+  expect_code 0 "$rc" "a pool relaunch should wait for a briefly held project lock"$'\n'"$out"
+  gen=$(meta_field "$dir" "$id" spawn_gen)
+  [ -n "$gen" ] && [ "$gen" != old ] || fail "the relaunch should publish a new runtime generation"
+  grep -Fx "spawn_gen=$gen" "$dir/pool/1/.fm-slot-owner" >/dev/null || fail "the claim should be refreshed to the published generation"
+  pass "fm-control relaunch: a pool relaunch waits for the project lock and refreshes its slot claim"
+}
+
 test_explicit_model_wins_over_the_recorded_one() {
   local dir out rc
   dir=$(new_case explicit rl7)
@@ -2182,7 +2226,8 @@ test_herdr_relaunch_resumes_only_the_registered_pi_session() {
     }
     dir=$HERDR_CASE_DIR
     rm -f "$dir/fake/herdr-stopped"
-    sed -i 's/^harness=claude$/harness=pi/' "$dir/home/state/resume-$registered.meta"
+    sed 's/^harness=claude$/harness=pi/' "$dir/home/state/resume-$registered.meta" > "$dir/resume-harness.meta"
+    mv "$dir/resume-harness.meta" "$dir/home/state/resume-$registered.meta"
     # Keep the pane's status authority registered to an existing Pi session,
     # while process-info proves that its previous agent has exited.
     printf '{"result":{"agent":{"agent":"%s","agent_status":"idle","agent_session":{"kind":"path","value":"/tmp/pi-bound-session.jsonl"}}}}\n' \
@@ -2512,6 +2557,8 @@ test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop
 test_signed_out_worker_account_pin_refuses_before_stop
 test_worker_account_pin_follows_the_relaunch
 test_relaunch_keeps_the_recorded_login_from_a_list
+test_relaunch_does_not_race_an_unrelated_project_lock_holder
+test_pool_relaunch_waits_for_the_project_lock_around_its_claim_refresh
 test_explicit_model_wins_over_the_recorded_one
 test_relaunch_onto_an_unverified_harness_is_refused
 test_prior_harness_turnend_registry_entry_is_cleared

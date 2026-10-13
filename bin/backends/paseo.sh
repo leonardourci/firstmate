@@ -91,6 +91,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
 # shellcheck source=bin/fm-backend-hometag-lib.sh
 . "$FM_BACKEND_PASEO_ROOT/bin/fm-backend-hometag-lib.sh"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$FM_BACKEND_PASEO_ROOT/bin/fm-timeout-lib.sh"
 
 # Shared composer-content classifier (empty|pending|unknown, and the fleet-wide
 # dead-shell-vs-agent-composer rule). Owned by bin/fm-composer-lib.sh, reused by
@@ -455,6 +457,38 @@ fm_backend_paseo_target_ready() { # <target> [expected-label]
   FM_BACKEND_PASEO_TERMINAL=$tid
   FM_BACKEND_PASEO_WORKSPACE=$wsid
   return 0
+}
+
+# A recovery/rollback read must distinguish an unreadable inventory from absence.
+# Unlike target_ready, this never adopts a replacement endpoint. A task name
+# anywhere in the inventory keeps its copy retained, including a relaunched id.
+fm_backend_paseo_endpoint_state() { # <target> <expected-label>
+  local target=$1 label=$2 list name matches bin
+  fm_backend_paseo_parse_target "$target" || { printf unknown; return; }
+  name=$(fm_backend_paseo_scoped_name "$label")
+  bin=$(fm_backend_paseo_bin) || { printf unknown; return; }
+  list=$(fm_run_timed 5 "$bin" terminal ls --all --json 2>/dev/null) || { printf unknown; return; }
+  printf '%s' "$list" | jq -e 'type == "array" and all(.[]; (.id | type == "string") and (.name | type == "string") and (.workspaceId | type == "string"))' >/dev/null 2>&1 || { printf unknown; return; }
+  matches=$(printf '%s' "$list" | jq --arg id "$FM_BACKEND_PASEO_TERMINAL" --arg name "$name" '[.[] | select(.id == $id or .name == $name)] | length')
+  [ "$matches" = 0 ] && { printf gone; return; }
+  if [ "$matches" = 1 ] && printf '%s' "$list" | jq -e --arg id "$FM_BACKEND_PASEO_TERMINAL" --arg name "$name" --arg ws "$FM_BACKEND_PASEO_WORKSPACE" 'any(.[]; .id == $id and .name == $name and .workspaceId == $ws)' >/dev/null; then
+    printf alive
+  else
+    printf unknown
+  fi
+}
+
+# Close only the exact endpoint this failed allocation created. No name-based
+# adoption or workspace retirement is allowed here; a failed close stays visible.
+fm_backend_paseo_rollback_created() { # <target> <expected-label>
+  local state bin
+  state=$(fm_backend_paseo_endpoint_state "$1" "$2")
+  [ "$state" != gone ] || return 0
+  [ "$state" = alive ] || return 1
+  fm_backend_paseo_parse_target "$1" || return 1
+  bin=$(fm_backend_paseo_bin) || return 1
+  fm_run_timed 5 "$bin" terminal kill "$FM_BACKEND_PASEO_TERMINAL" >/dev/null 2>&1 || return 1
+  [ "$(fm_backend_paseo_endpoint_state "$1" "$2")" = gone ]
 }
 
 # fm_backend_paseo_current_path: the live foreground process's cwd, or empty

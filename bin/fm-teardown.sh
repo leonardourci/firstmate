@@ -129,9 +129,8 @@
 # absent claim - a slot taken before claims existed, or already returned - keeps
 # exactly the record-scan protection it had before, because refusing it would
 # strand every task in flight across that change on no evidence at all.
-# Why Treehouse's own state cannot answer this for crewmate slots, and why the
-# claim file sits on top of it, is owned by bin/fm-wake-lib.sh's slot-owner
-# claim comment.
+# Native allocation binding and legacy process-lease limits are owned by
+# bin/fm-wake-lib.sh's slot-owner claim comment.
 # The recorded endpoint's exact task identity and the record's spawn incarnation
 # are validated separately
 # before cleanup. Its current working directory is only incidental process
@@ -179,7 +178,23 @@
 # leased home releases its durable treehouse lease so the pool slot is freed,
 # never left leased forever. If the treehouse return fails, teardown leaves the
 # leased home and state in place instead of hiding a still-held lease.
-# Usage: fm-teardown.sh <task-id> [--force] [--legacy-record]
+# Usage: fm-teardown.sh <task-id> [--force] [--legacy-record] [--return-copy]
+#   --return-copy returns only a positively owned, clean, fully pushed Treehouse
+#     copy whose Paseo endpoint is proven gone, with no live cwd/open-file processes or
+#     active/unknown pipeline. A matching task/home/spawn_gen claim, durable
+#     native lease, and its lease_gen allocation generation are required; return compares the exact lease ID under the
+#     allocator lock, without --force. Legacy process leases remain retained
+#     for reconciliation.
+#     It keeps the task, status, decisions and backlog.
+#     Under the project/control/meta locks, worktree= is cleared atomically and
+#     returned_worktree/head/branch/native_owner preserve evidence.
+#     worktree_state=returning
+#     is a fail-closed journal before return; returned is the success receipt.
+#     The journal is written only within the first 20s of this process, so
+#     its caller's 40s bound leaves the native return and receipt their own
+#     time instead of cutting them off mid-journal.
+#     A partial return requires operator reconciliation, never an automatic
+#     second return against a slot that could already have a new owner.
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
 #   checks, and discards secondmate child work for kind=secondmate. Only use it
 #   when the captain has explicitly said to discard the work.
@@ -302,6 +317,12 @@
 # never blocks cleanup.
 set -eu
 
+if [ "${1:-}" = --help ]; then
+  printf '%s\n' 'Usage: fm-teardown.sh <task-id> [--force] [--legacy-record] [--return-copy]' \
+    '--return-copy retains the task/backlog and conditionally returns only a matching durable task lease: clean, fully pushed, proven gone Paseo endpoint, and no live process or pipeline.' \
+    'Interrupted copy returns retain a fail-closed journal for operator reconciliation.'
+  exit 0
+fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
@@ -390,11 +411,13 @@ fi
 ID=$1
 FORCE=
 LEGACY_RECORD_GIVEN=0
+RETURN_COPY=0
 shift
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --force) FORCE=--force ;;
     --legacy-record) LEGACY_RECORD_GIVEN=1 ;;
+    --return-copy) RETURN_COPY=1 ;;
     *)
       echo "error: invalid teardown request" >&2
       exit 2
@@ -402,6 +425,10 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+if [ "$RETURN_COPY" = 1 ] && { [ -n "$FORCE" ] || [ "$LEGACY_RECORD_GIVEN" = 1 ]; }; then
+  echo "error: --return-copy cannot discard work or accept a legacy incarnation" >&2
+  exit 2
+fi
 fm_backlog_directory_present "$STATE" "state directory" || {
   echo "error: teardown refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
   exit 1
@@ -426,6 +453,7 @@ fm_lease_guard "$ID" "teardown (fm-teardown)"
 META="$STATE/$ID.meta"
 TREEHOUSE_PROJECT_LOCK=
 TREEHOUSE_PROJECT_LOCK_HELD=0
+TEARDOWN_NATIVE_LEASE_ID=
 TREEHOUSE_SLOT_LOCK_REQUIRED=0
 if [ -f "$META" ] && [ ! -L "$META" ]; then
   TEARDOWN_LOCK_KIND=$(fm_meta_get "$META" kind)
@@ -522,6 +550,20 @@ fm_backlog_record_present "$META" "task record" "$STATE" || {
   echo "error: teardown refused after locking: $FM_BACKLOG_TRANSITION_ERROR" >&2
   exit 1
 }
+case "$(fm_meta_get "$META" worktree_state)" in
+  returning)
+    echo "REFUSED: task $ID has an incomplete copy return; reconcile its retained returned_worktree evidence before cleanup" >&2
+    exit 1 ;;
+  returned)
+    [ -z "$(fm_meta_get "$META" worktree)" ] || {
+      echo "REFUSED: task $ID's returned-copy receipt conflicts with a live worktree identity; records retained" >&2
+      exit 1
+    }
+    if [ "$RETURN_COPY" = 1 ]; then
+      echo "copy-return: task $ID's copy was already returned; records retained"
+      exit 0
+    fi ;;
+esac
 TEARDOWN_META_KIND=$(fm_meta_get "$META" kind)
 [ -n "$TEARDOWN_META_KIND" ] || TEARDOWN_META_KIND=ship
 # Retiring a persistent secondmate is main's alone in both postures; the kind
@@ -573,7 +615,7 @@ case "$TEARDOWN_WINDOW_COUNT:$(fm_meta_get "$META" window)" in
     esac
     ;;
 esac
-if [ "$TEARDOWN_CLEANUP_RECOVERY" != orca ]; then
+if [ "$TEARDOWN_CLEANUP_RECOVERY" != orca ] && [ "$RETURN_COPY" = 0 ]; then
   if fm_backlog_transition_applies "$CONFIG" "$DATA" "$TEARDOWN_META_KIND"; then
     TEARDOWN_BACKLOG_APPLIES=1
   else
@@ -1101,6 +1143,11 @@ remote_secondmate_teardown_locked() {
   return "$rc"
 }
 
+if [ "$RETURN_COPY" = 1 ] && { [ "$TEARDOWN_META_KIND" = secondmate ] || [ -n "$(fm_meta_get "$META" remote_host)" ]; }; then
+  echo "REFUSED: copy return is limited to this home's ordinary direct reports" >&2
+  exit 1
+fi
+
 if remote_secondmate_teardown_locked; then
   "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
   exit 0
@@ -1122,7 +1169,19 @@ if [ "$TEARDOWN_WINDOWLESS" = 1 ]; then
   BACKEND=tmux
   T=
 else
-  fm_backend_validate_task_endpoint "$META" "$ID" || exit 1
+  if [ "$(fm_meta_get "$META" worktree_state)" = returned ]; then
+    # Keep the live worktree identity empty. The validator needs the historical
+    # path only to validate the endpoint shape for records-only cleanup.
+    endpoint_shape="$META.endpoint-shape.${BASHPID:-$$}"
+    awk '$0 !~ /^worktree=/' "$META" > "$endpoint_shape" || exit 1
+    printf 'worktree=%s\n' "$(fm_meta_get "$META" returned_worktree)" >> "$endpoint_shape"
+    endpoint_shape_rc=0
+    fm_backend_validate_task_endpoint "$endpoint_shape" "$ID" || endpoint_shape_rc=$?
+    rm -f "$endpoint_shape"
+    [ "$endpoint_shape_rc" = 0 ] || exit 1
+  else
+    fm_backend_validate_task_endpoint "$META" "$ID" || exit 1
+  fi
   BACKEND=$FM_BACKEND_VALIDATED_BACKEND
   T=$FM_BACKEND_VALIDATED_TARGET
   [ "$BACKEND" != orca ] || T_ORCA=$T
@@ -1131,7 +1190,7 @@ fi
 # be readable before the first destructive step. --force does not override
 # this. A forced descendant is proved in validate_firstmate_home_children_removal.
 teardown_require_backend_prerequisites "$BACKEND" "$ID" || exit 1
-if [ "${FM_TEARDOWN_GUARD_DONE:-0}" != 1 ]; then
+if [ "${FM_TEARDOWN_GUARD_DONE:-0}" != 1 ] && [ "$RETURN_COPY" = 0 ]; then
   "$FM_ROOT/bin/fm-guard.sh" || true
 fi
 HOME_PATH=$(grep '^home=' "$META" | cut -d= -f2- || true)
@@ -1796,19 +1855,25 @@ cleanup_stale_lock_for_safety_check() {
   return "$TEARDOWN_TREEHOUSE_LOCK_REFUSED"
 }
 
-# Return a worktree/home via `treehouse return --force`, tolerating a transient or
-# stale git index.lock left by a killed crew process. See the script header.
+# The native return owner uses conditional lease identity when supplied.
+# Ordinary teardown permits --force and stale-index retries; copy-only recovery
+# uses neither, so dirt appearing after its Git check is refused by Treehouse.
 teardown_treehouse_return() {
-  local dir=$1 cd_dir=$2 label=$3 post_cleanup_check=${4:-}
+  local dir=$1 cd_dir=$2 label=$3 post_cleanup_check=${4:-} expected_lease=${5:-}
   local out lock attempt=0 max_retries lock_desc
+  local -a return_args=(return)
+  [ "$RETURN_COPY" = 1 ] || return_args+=(--force)
+  [ -z "$expected_lease" ] || return_args+=(--if-lease-id "$expected_lease")
 
   # Capture stdout+stderr so non-lock failures stay visible and lock failures can
   # be matched by signature even when the lock file is already gone mid-check.
-  if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+  if out=$( ( cd "$cd_dir" && treehouse "${return_args[@]}" "$dir" ) 2>&1 ); then
     [ -n "$out" ] && printf '%s\n' "$out"
     return 0
   fi
   [ -n "$out" ] && printf '%s\n' "$out" >&2
+
+  [ "$RETURN_COPY" = 0 ] || return 1
 
   if ! treehouse_return_is_index_lock_error "$out"; then
     return 1
@@ -1829,7 +1894,7 @@ teardown_treehouse_return() {
     echo "teardown: $label return failed with transient git lock ($lock_desc); waiting ${TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS}s and retrying ($attempt/${max_retries})" >&2
     sleep "$TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS"
 
-    if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+    if out=$( ( cd "$cd_dir" && treehouse "${return_args[@]}" "$dir" ) 2>&1 ); then
       [ -n "$out" ] && printf '%s\n' "$out"
       echo "teardown: $label return succeeded on retry; lock cleared on its own" >&2
       return 0
@@ -1856,7 +1921,7 @@ teardown_treehouse_return() {
           return 1
         fi
       fi
-      if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+      if out=$( ( cd "$cd_dir" && treehouse "${return_args[@]}" "$dir" ) 2>&1 ); then
         [ -n "$out" ] && printf '%s\n' "$out"
         echo "teardown: $label return succeeded after stale-lock cleanup" >&2
         return 0
@@ -2076,11 +2141,17 @@ conclude_task_no_mistakes_run() {  # <worktree>
 # -d cwd` scan (never the recursive +D file-tree walk, which lsof itself
 # documents as slow). Never $$ (this script's own pid). Empty output when
 # nothing matches; failure means the scan could not establish a safe result.
-pids_with_cwd_under() {  # <dir>
-  local dir=$1 out pid path line
+# The optional files mode also inspects open files/executable mappings, for
+# copy-only return's live-service gate; ordinary process reaping stays cwd-only.
+pids_with_cwd_under() {  # <dir> [cwd|files]
+  local dir=$1 mode=${2:-cwd} out pid path line
   [ -n "$dir" ] && [ -d "$dir" ] || return 0
   dir=$(cd "$dir" && pwd -P) || return 1
-  out=$(lsof -a -d cwd -Fpn 2>/dev/null) || return 1
+  case "$mode" in
+    cwd) out=$(lsof -a -d cwd -Fpn 2>/dev/null) || return 1 ;;
+    files) out=$(lsof -Fpn 2>/dev/null) || return 1 ;;
+    *) return 1 ;;
+  esac
   [ -n "$out" ] || return 0
   pid=
   while IFS= read -r line; do
@@ -2089,7 +2160,10 @@ pids_with_cwd_under() {  # <dir>
         pid=${line#p}
         case "$pid" in ''|*[!0-9]*) return 1 ;; esac
         ;;
-      fcwd) [ -n "$pid" ] || return 1 ;;
+      f*)
+        [ -n "$pid" ] || return 1
+        [ "$mode" = files ] || [ "$line" = fcwd ] || return 1
+        ;;
       n*)
         [ -n "$pid" ] || return 1
         path=${line#n}
@@ -2393,7 +2467,11 @@ require_exclusive_worktree_slot_record() {
   # block the claimant's own teardown behind it.
   fm_treehouse_slot_owner_state "$slot" "$record_id"
   [ "$FM_TREEHOUSE_SLOT_OWNER" != other ] || return 0
-  collect_local_firstmate_states "$record_state" || return 1
+  if [ "$RETURN_COPY" = 1 ]; then
+    TREEHOUSE_OWNER_STATES=("$record_state")
+  else
+    collect_local_firstmate_states "$record_state" || return 1
+  fi
   for state_dir in "${TREEHOUSE_OWNER_STATES[@]}"; do
     for other in "$state_dir"/*.meta; do
       [ -f "$other" ] && [ ! -L "$other" ] || continue
@@ -2448,10 +2526,26 @@ require_exclusive_task_worktree_slot() {
 # Those keep exactly the record-scan protection they had before.
 TEARDOWN_SLOT_REASSIGNED_RC=3
 require_owned_worktree_slot_record() {  # <task-id> <worktree>
-  local record_id=$1 worktree=$2 marker
+  local record_id=$1 worktree=$2 marker native current
+  TEARDOWN_NATIVE_LEASE_ID=
   fm_treehouse_slot_owner_state "$worktree" "$record_id"
   case "$FM_TREEHOUSE_SLOT_OWNER" in
-    mine|absent) return 0 ;;
+    mine)
+      marker=$(fm_treehouse_slot_owner_marker "$worktree") || return 1
+      if LC_ALL=C grep -q '^native_owner=' "$marker"; then
+        native=$(fm_backend_meta_exact_value "$marker" native_owner) && [ -n "$native" ] || {
+          echo "REFUSED: task $record_id's native allocation claim is malformed; copy and records retained" >&2
+          return 1
+        }
+        current=$(fm_treehouse_slot_native_identity "$worktree") || current=
+        if [ "$current" != "$native" ]; then
+          echo "REFUSED: task $record_id's native allocation changed or cannot be read; copy and records retained, even with --force" >&2
+          return 1
+        fi
+        case "$native" in lease:*) TEARDOWN_NATIVE_LEASE_ID=${native#lease:} ;; esac
+      fi
+      return 0 ;;
+    absent) return 0 ;;
     other)
       echo "warning: task $record_id's recorded worktree $worktree was reassigned to task $FM_TREEHOUSE_SLOT_OWNER_ID${FM_TREEHOUSE_SLOT_OWNER_HOME:+ (home $FM_TREEHOUSE_SLOT_OWNER_HOME)}, which claimed that pool slot after this record was written; that slot is no longer $record_id's, so its processes, copy, and claim are left untouched and only $record_id's own cleanup runs." >&2
       return "$TEARDOWN_SLOT_REASSIGNED_RC"
@@ -2467,6 +2561,7 @@ require_owned_worktree_slot_record() {  # <task-id> <worktree>
 # step that would read or touch $WT consults teardown_owns_worktree, so a
 # reassigned slot is skipped consistently rather than by each step's own guess.
 TEARDOWN_SLOT_REASSIGNED=0
+TEARDOWN_TASK_LEASE_ID=
 TEARDOWN_SLOT_REASSIGNED_TO=
 TEARDOWN_SLOT_REASSIGNED_HOME=
 require_owned_task_worktree_slot() {
@@ -2474,7 +2569,7 @@ require_owned_task_worktree_slot() {
   slot=$(teardown_live_slot_path) || return 0
   require_owned_worktree_slot_record "$ID" "$slot" || rc=$?
   case "$rc" in
-    0) return 0 ;;
+    0) TEARDOWN_TASK_LEASE_ID=$TEARDOWN_NATIVE_LEASE_ID; return 0 ;;
     "$TEARDOWN_SLOT_REASSIGNED_RC")
       TEARDOWN_SLOT_REASSIGNED=1
       TEARDOWN_SLOT_REASSIGNED_TO=$FM_TREEHOUSE_SLOT_OWNER_ID
@@ -3293,6 +3388,7 @@ cleanup_firstmate_home_children() {
       # or return, so only its records are cleaned up. The preflight above
       # already named the reassignment on stderr under the same lock.
       child_owner_rc=0
+      TEARDOWN_NATIVE_LEASE_ID=
       if fm_treehouse_pool_slot "$child_proj" "$child_wt"; then
         require_owned_worktree_slot_record "$child_id" "$child_wt" 2>/dev/null || child_owner_rc=$?
       fi
@@ -3306,11 +3402,11 @@ cleanup_firstmate_home_children() {
           "$child_wt/.opencode/plugins/fm-busy-state.js" \
           "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend"
         if [ -n "$child_proj" ] && [ -d "$child_proj" ] && command -v treehouse >/dev/null 2>&1; then
-          if teardown_treehouse_return "$child_wt" "$child_proj" "child worktree"; then
+          if teardown_treehouse_return "$child_wt" "$child_proj" "child worktree" "" "$TEARDOWN_NATIVE_LEASE_ID"; then
             fm_treehouse_slot_owner_release "$child_wt" "$child_id"
           else
             child_return_rc=$?
-            if [ "$child_return_rc" -eq "$TEARDOWN_TREEHOUSE_LOCK_REFUSED" ]; then
+            if [ -n "$TEARDOWN_NATIVE_LEASE_ID" ] || [ "$child_return_rc" -eq "$TEARDOWN_TREEHOUSE_LOCK_REFUSED" ]; then
               return "$child_return_rc"
             fi
             safe_rm_rf_child_worktree "$child_wt" "$child_proj"
@@ -3358,6 +3454,123 @@ remove_secondmate_registry_entry() {
   [ "$acquired" -eq 0 ] || fm_lock_release "$lock"
   return "$rc"
 }
+
+# The nondestructive recovery entry uses the same safety predicate and return
+# implementation as teardown, with stricter automatic gates and no lifecycle
+# cleanup. The regular teardown below still owns record/backlog retirement.
+return_dead_task_copy() {
+  local marker generation lease_gen home claim_home dirty unpushed branch overview selection rest out tmp live_pids native
+  if [ "$BACKEND" != paseo ] || [ "$KIND" = secondmate ] || \
+    ! fm_treehouse_pool_slot "$PROJ" "$WT"; then
+    echo "REFUSED: $ID has no supported recovery-grade Treehouse copy identity" >&2
+    return 1
+  fi
+  marker=$(fm_treehouse_slot_owner_marker "$WT") || return 1
+  fm_treehouse_slot_owner_state "$WT" "$ID"
+  generation=$(fm_backend_meta_exact_value "$META" spawn_gen) || return 1
+  home=$(CDPATH='' cd -- "$FM_HOME" && pwd -P) || return 1
+  claim_home=$(fm_backend_meta_exact_value "$marker" home) || return 1
+  [ "$FM_TREEHOUSE_SLOT_OWNER" = mine ] && [ -n "$generation" ] && \
+    [ "$(fm_backend_meta_exact_value "$marker" task)" = "$ID" ] && \
+    [ "$(fm_backend_meta_exact_value "$marker" spawn_gen)" = "$generation" ] && \
+    [ "$(CDPATH='' cd -- "$claim_home" 2>/dev/null && pwd -P)" = "$home" ] || {
+      echo "REFUSED: $ID's slot claim does not prove this home and spawn generation; copy retained" >&2; return 1;
+    }
+  native=$(fm_backend_meta_exact_value "$marker" native_owner) || {
+    echo "REFUSED: $ID has no native allocation fingerprint; copy retained" >&2; return 1;
+  }
+  case "$native" in lease:*) TEARDOWN_NATIVE_LEASE_ID=${native#lease:} ;; *)
+    echo "REFUSED: $ID has no conditional native task lease; copy retained" >&2; return 1 ;; esac
+  lease_gen=$(fm_backend_meta_exact_value "$META" lease_gen) && \
+    [ "$(fm_backend_meta_exact_value "$marker" lease_gen)" = "$lease_gen" ] || {
+      echo "REFUSED: $ID's slot claim does not prove the lease allocation generation; copy retained" >&2; return 1;
+    }
+  [ "$(fm_treehouse_slot_native_identity "$WT")" = "$native" ] && \
+    [ "$(fm_treehouse_slot_native_holder "$WT")" = "$(fm_treehouse_task_lease_holder "$ID" "$FM_HOME" "$lease_gen")" ] || {
+      echo "REFUSED: $ID's native allocation changed or is unprovable; copy retained" >&2; return 1;
+    }
+  require_exclusive_task_worktree_slot || return 1
+  [ "$(fm_backend_paseo_endpoint_state "$T" "fm-$ID")" = gone ] || {
+    echo "REFUSED: $ID's recorded endpoint is live or its absence cannot be proven; copy retained" >&2; return 1;
+  }
+  # No ignored teardown exception licenses automatic loss of untracked work.
+  dirty=$(git -C "$WT" status --porcelain --untracked-files=all) || return 1
+  [ -z "$dirty" ] || { echo "REFUSED: $ID has dirty or untracked work; copy retained" >&2; return 1; }
+  unpushed=$(git -C "$WT" log --oneline HEAD --not --remotes --) || return 1
+  [ -z "$unpushed" ] || { echo "REFUSED: $ID has unpushed commits; copy retained" >&2; return 1; }
+  # Scouts do not normally check scratch commits at teardown; automatic return
+  # has already checked all kinds above and also invokes the safety owner.
+  validate_worktree_teardown_safety || return 1
+  branch=$(git -C "$WT" symbolic-ref --quiet --short HEAD) || {
+    echo "REFUSED: $ID's detached copy has no pipeline attribution; copy retained" >&2; return 1;
+  }
+  if overview=$(fm_nm_run_bounded "$WT" 5 axi); then
+    selection=$(fm_nm_select_run "$branch" "$overview" "$WT" 5)
+  else
+    # The CLI's positive uninitialized-repository response proves no gate owns
+    # this copy. A timeout, missing binary, changed or mixed response does not.
+    rest=$?
+    [ "$rest" = 1 ] || {
+      echo "REFUSED: cannot read $ID's pipeline inventory; copy retained" >&2; return 1;
+    }
+    # shellcheck disable=SC2016 # Match the CLI's literal backtick help text.
+    case "$overview" in
+      "error: repo not initialized (run 'no-mistakes init' first)" | \
+      "error: repo not initialized (run 'no-mistakes init' first)"$'\n''help[1]: Run `no-mistakes init` to set up the gate in this repository') selection=absent ;;
+      *) echo "REFUSED: cannot read $ID's pipeline inventory; copy retained" >&2; return 1 ;;
+    esac
+  fi
+  case "$selection" in
+    absent) ;;
+    selected\|*)
+      rest=${selection#selected|}; rest=${rest#*|}; rest=${rest%%|*}
+      [ "$(fm_nm_run_status_class "$rest")" = terminal ] || {
+        echo "REFUSED: $ID has an active pipeline; copy retained" >&2; return 1;
+      } ;;
+    *) echo "REFUSED: $ID's pipeline state is ambiguous; copy retained" >&2; return 1 ;;
+  esac
+  if ! command -v lsof >/dev/null 2>&1 || ! live_pids=$(pids_with_cwd_under "$WT" files); then
+    echo "REFUSED: cannot prove $ID's copy has no live processes; copy retained" >&2
+    return 1
+  fi
+  [ -z "$live_pids" ] || { echo "REFUSED: $ID's copy has live processes or open files; copy retained" >&2; return 1; }
+  # Recheck under all three locks immediately before journaling/returning.
+  [ "$(fm_backend_paseo_endpoint_state "$T" "fm-$ID")" = gone ] || return 1
+  [ "$(fm_backend_meta_exact_value "$marker" spawn_gen)" = "$generation" ] && \
+    [ "$(fm_backend_meta_exact_value "$marker" task)" = "$ID" ] && \
+    [ "$(fm_backend_meta_exact_value "$marker" home)" = "$claim_home" ] || return 1
+  live_pids=$(pids_with_cwd_under "$WT" files) && [ -z "$live_pids" ] || return 1
+  dirty=$(git -C "$WT" status --porcelain --untracked-files=all) || return 1
+  [ -z "$dirty" ] || return 1
+  unpushed=$(git -C "$WT" log --oneline HEAD --not --remotes --) || return 1
+  [ -z "$unpushed" ] || return 1
+  validate_worktree_teardown_safety || return 1
+  [ "$(fm_backend_meta_exact_value "$marker" lease_gen)" = "$lease_gen" ] && \
+    [ "$(fm_treehouse_slot_native_identity "$WT")" = "$native" ] && \
+    [ "$(fm_treehouse_slot_native_holder "$WT")" = "$(fm_treehouse_task_lease_holder "$ID" "$FM_HOME" "$lease_gen")" ] || return 1
+  [ "$SECONDS" -lt 20 ] || {
+    echo "REFUSED: $ID's safety checks used the recovery time before journaling; copy retained" >&2; return 1;
+  }
+  tmp="$META.return-copy.${BASHPID:-$$}"
+  out=$(git -C "$WT" rev-parse HEAD) || return 1
+  awk '$0 !~ /^(worktree|worktree_state|returned_worktree|returned_head|returned_branch|returned_native_owner)=/' "$META" > "$tmp" || return 1
+  printf 'worktree=\nworktree_state=returning\nreturned_worktree=%s\nreturned_head=%s\nreturned_branch=%s\nreturned_native_owner=%s\n' "$WT" "$out" "$branch" "$native" >> "$tmp" || return 1
+  mv -f "$tmp" "$META" || return 1
+  # No retry that kills/reaps processes or repairs an index is authorized by
+  # automatic recovery. A partial return leaves the journal and claim intact.
+  if ! teardown_treehouse_return "$WT" "$PROJ" "dead task copy" "" "$TEARDOWN_NATIVE_LEASE_ID"; then
+    echo "REFUSED: return failed for $ID; incomplete return journal retained" >&2
+    return 1
+  fi
+  fm_treehouse_slot_owner_release "$WT" "$ID"
+  sed 's/^worktree_state=returning$/worktree_state=returned/' "$META" > "$tmp" && mv -f "$tmp" "$META" || return 1
+  printf 'copy-return: released %s; task and backlog retained\n' "$ID"
+}
+
+if [ "$RETURN_COPY" = 1 ]; then
+  return_dead_task_copy
+  exit $?
+fi
 
 require_exclusive_task_worktree_slot || exit 1
 require_owned_task_worktree_slot || exit 1
@@ -3643,7 +3856,7 @@ elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ]; then
     post_lock_cleanup_check=validate_worktree_teardown_safety
   fi
-  teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" || {
+  teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" "$TEARDOWN_TASK_LEASE_ID" || {
     echo "error: treehouse return failed for worktree $WT; teardown aborted" >&2
     exit 1
   }

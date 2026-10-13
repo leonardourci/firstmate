@@ -8,6 +8,9 @@
 #
 # This is an adjunct to the existing watcher poll loop and session-start path,
 # not a watcher, daemon, PR poll, or forge client of its own.
+# Each due direct report also attempts copy-only dead-endpoint reconciliation
+# through fm-treehouse-recover.sh; its safety and returned-copy state are owned
+# by fm-teardown.sh --return-copy, independently of terminal-outcome delivery.
 # In a secondmate home every `scan` invocation, which is every watcher poll,
 # first runs the LEDGER-FIRST parent delivery: a direct child whose status
 # ledger ends in a whole `done:` or `failed:` line has stated its own outcome,
@@ -45,13 +48,18 @@
 # advance the durable cursor past a child it never examined. A process-group
 # kill one second after the budget remains as a backstop for a scan wedged in
 # an unbounded wait (for example a live-held wake-queue lock), so the clean
-# deadline path is not racing its own backstop.
+# deadline path is not racing its own backstop. Copy recovery for each child
+# whose outcome this scan durably recorded (after a completed crew-state read,
+# or a complete terminal ledger line recorded by the ledger-first owner)
+# runs after the scan, outside that backstop, with its own fixed 50s
+# bound rather than the leftover budget; none starts after the first 50s.
 #
 # It considers only a direct ordinary crewmate whose newest meta, status, or
 # turn-ended mtime is older than that interval and whose last status is not
 # captain-held. In a secondmate home a child whose ledger already ends in a
-# terminal done or failed line belongs to the ledger-first path above and is
-# skipped here, so one outcome is never reported twice. It then uses
+# terminal done or failed line belongs to the ledger-first path above; the scan
+# only re-runs that owner under the meta lock it already holds, so one outcome
+# is never reported twice. It then uses
 # fm-crew-state.sh as the sole current-state source.
 # Only a done or failed state is suspicious enough to create a durable terminal
 # outcome record or wake the supervisor.
@@ -129,6 +137,7 @@ if [ "$FM_INACTIVE_RECONCILE_BUDGET_SECS" -gt 30 ]; then
   printf 'fm-inactive-reconcile: FM_INACTIVE_RECONCILE_BUDGET_SECS must be a whole number from 1 to 30\n' >&2
   exit 2
 fi
+RECOVER_BOUND_SECS=50
 
 if [ "$(uname)" = Darwin ]; then
   file_mtime() { /usr/bin/stat -f %m "$1" 2>/dev/null; }
@@ -429,6 +438,7 @@ report_child_ledger_locked() { # <id> <meta>
   fi
   outcome_key="child-outcome-$id-$state-${fingerprint:0:8}"
   ensure_record "$fingerprint" "$id" "$incarnation" "$state" "$outcome_key" direct upstream "$pr" || return 1
+  OUTCOME_OBSERVED=1
   [ -n "$RECORD_PENDING" ] || return 0
   last_status_line "$status" previous >/dev/null
   predecessor_head=$(sha256_text "$previous")
@@ -507,17 +517,24 @@ reconcile_direct_child_locked() { # <id> <meta> <secondmate-id-or-empty> <timeou
   # A ledger that states its own outcome is the ledger-first path's to deliver.
   if [ -n "$self" ]; then
     child_terminal_ledger_line "$status" >/dev/null
-    case "$?" in 0|2) return 0 ;; esac
+    case "$?" in
+      0) report_child_ledger_locked "$id" "$meta" || true; return 0 ;;
+      2) return 0 ;;
+    esac
   fi
   age=$(last_activity_age "$meta" "$status" "$turn")
   [ "$age" -ge "$FM_INACTIVE_RECONCILE_SECS" ] || return 0
   state_line=$(fm_run_timed "$timeout" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CREW_STATE_NO_FORGE=1 \
     "$CREW_STATE_BIN" "$id" 2>/dev/null) || state_rc=$?
   [ "$state_rc" -ne 124 ] || return 3
+  [ "$state_rc" -ne 0 ] || OUTCOME_OBSERVED=1
   last=$(last_status_line "$status")
   if [ -n "$self" ]; then
     child_terminal_ledger_line "$status" >/dev/null
-    case "$?" in 0|2) return 0 ;; esac
+    case "$?" in
+      0) OUTCOME_OBSERVED=0; report_child_ledger_locked "$id" "$meta" || true; return 0 ;;
+      2) OUTCOME_OBSERVED=0; return 0 ;;
+    esac
   fi
   case "$state_line" in
     'state: done '*) state='done' ;;
@@ -557,8 +574,16 @@ reconcile_direct_child() { # <id> <meta> <secondmate-id-or-empty> <timeout>
   local id=$1 meta=$2 self=${3:-} timeout=$4 lock rc=0
   lock=$(fm_meta_lock_path "$meta") || return 1
   fm_lock_acquire_wait "$lock" || return 1
+  OUTCOME_OBSERVED=0
   reconcile_direct_child_locked "$id" "$meta" "$self" "$timeout" || rc=$?
   fm_lock_release "$lock"
+  # Only a child past the age gate whose crew state was read and whose outcome
+  # was recorded may lose its live copy identity. Recovery takes
+  # project/control/meta locks, so the outer scan runs it after this reader's
+  # locks are released, outside the scan backstop.
+  if [ "$rc" -eq 0 ] && [ "$OUTCOME_OBSERVED" -eq 1 ]; then
+    printf '%s\n' "$id" >> "${FM_INACTIVE_RECOVER_LIST:-/dev/null}" || true
+  fi
   return "$rc"
 }
 
@@ -668,11 +693,18 @@ case "$mode" in
     # process-group kill is only the backstop for a scan wedged outside every
     # bounded section (an unbounded lock wait), so it fires one second after
     # the deadline instead of racing the clean bounded exit it exists to guard.
-    if fm_run_timed $((FM_INACTIVE_RECONCILE_BUDGET_SECS + 1)) "$0" _scan-locked "$startup"; then
-      :
-    elif [ "$?" -ne 124 ]; then
-      exit 1
-    fi
+    FM_INACTIVE_RECOVER_LIST=$(mktemp "${TMPDIR:-/tmp}/fm-inactive-recover.XXXXXX") || exit 1
+    export FM_INACTIVE_RECOVER_LIST
+    scan_rc=0
+    fm_run_timed $((FM_INACTIVE_RECONCILE_BUDGET_SECS + 1)) "$0" _scan-locked "$startup" || scan_rc=$?
+    recover_deadline=$(( $(date +%s) + RECOVER_BOUND_SECS ))
+    while IFS= read -r id; do
+      [ "$(date +%s)" -lt "$recover_deadline" ] || break
+      fm_run_timed "$RECOVER_BOUND_SECS" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+        "$SCRIPT_DIR/fm-treehouse-recover.sh" task "$id" >&2 || true
+    done < "$FM_INACTIVE_RECOVER_LIST"
+    rm -f "$FM_INACTIVE_RECOVER_LIST"
+    [ "$scan_rc" -eq 0 ] || [ "$scan_rc" -eq 124 ] || exit 1
     ;;
   _scan-locked)
     [ "$#" -eq 2 ] || exit 2

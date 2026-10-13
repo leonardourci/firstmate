@@ -174,7 +174,8 @@
 #   The local root is whatever bin/fm-wake-lib.sh's
 #   fm_firstmate_root_home resolves, so a home seeded from another machine anchors
 #   that lock itself rather than failing to resolve one;
-#   contention refuses rather than waits.
+#   fresh-spawn contention refuses rather than waits. A relaunch takes the lock
+#   only around its slot-claim refresh, waiting at most 60s.
 #   With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
 #   config/crew-dispatch.json is absent. When that file exists, crewmate/scout
 #   spawns require an explicit harness so firstmate cannot silently skip dispatch
@@ -253,7 +254,12 @@
 #   out as a transient rather than adopted and then refused, so a home that is
 #   itself a linked worktree of the project repository still launches. A pane
 #   that never reaches an isolated worktree refuses at the end of that wait,
-#   naming the last path seen and why it was rejected.
+#   naming the last path seen and why it was rejected. Completed allocator
+#   errors are read through nonce-framed backend capture and reported early.
+#   Paseo reserves a durable task lease; a definite failed fresh allocation
+#   closes only its exact created terminal still in the project directory.
+#   Full-pool recovery is bounded and retries only after an owned matching slot
+#   is released; fm-teardown.sh --return-copy owns the safety and receipt.
 #   That placement is proven only at launch. Every ship or scout pane therefore
 #   also receives `export FM_TASK_ID=<task-id>` before the launch command, on
 #   the same channel as GOTMPDIR, and bin/fm-test-run.sh refuses to execute the
@@ -1236,6 +1242,8 @@ SPAWN_META_PUBLISH_STARTED=0
 SPAWN_FRESH_COMMIT_PENDING=0
 SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
+SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
+SPAWN_LEASE_GEN=
 SPAWN_TREEHOUSE_PROJECT_LOCK=
 SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
 SPAWN_SLOT_CLAIMED=0
@@ -1381,6 +1389,27 @@ spawn_abort_cleanup() {
   # already released that lock and leaves the claim for the next spawn's
   # atomic replacement rather than racing it. The release itself never removes
   # another task's claim.
+  # A durable Paseo lease outlives this process, so a fresh copy this spawn
+  # leased under its own holder is conditionally returned by exact lease ID.
+  # Treehouse's non-forced return refuses dirt; any unproved case keeps the
+  # lease and claim and names the lease for the operator.
+  if [ "${RELAUNCH:-0}" -eq 0 ] && [ -n "${allocation_holder:-}" ] && [ -n "${WT:-}" ] &&
+    [ "$SPAWN_LAUNCH_SENT" = 0 ] &&
+    [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] &&
+    fm_treehouse_pool_slot "$PROJ_ABS" "$WT" &&
+    [ "$(fm_treehouse_slot_native_holder "$WT" 2>/dev/null)" = "$allocation_holder" ]; then
+    abort_lease=$(fm_treehouse_slot_native_identity "$WT" 2>/dev/null) || abort_lease=
+    abort_lease=${abort_lease#lease:}
+    if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ] && [ -n "$abort_lease" ] &&
+      [ -z "$(git -C "$WT" status --porcelain --untracked-files=all 2>/dev/null || echo unknown)" ] &&
+      (cd "$PROJ_ABS" && treehouse return --if-lease-id "$abort_lease" "$WT") >&2; then
+      echo "spawn: returned task $ID's unused leased copy $WT (lease $abort_lease)" >&2
+      SPAWN_SLOT_CLAIMED=1
+    else
+      echo "warning: task $ID's aborted spawn retains durable lease ${abort_lease:-unknown} (holder $allocation_holder) on $WT; inspect it, then return it with 'treehouse return --if-lease-holder $allocation_holder $WT'" >&2
+      SPAWN_SLOT_CLAIMED=0
+    fi
+  fi
   if [ "$SPAWN_SLOT_CLAIMED" = 1 ] && [ -n "${WT:-}" ] &&
     [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] &&
     fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
@@ -4338,7 +4367,41 @@ elif [ "$RELAUNCH" -eq 1 ]; then
   fi
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
-  spawn_send_text_line "$WT_TARGET" 'treehouse get'
+  # Frame the command's actual exit, never an echoed error-like command or an
+  # unrelated scrollback line. Successful get remains inside its subshell.
+  allocation_token="__FM_TREEHOUSE_${BASHPID:-$$}_${RANDOM}"
+  allocation_attempt=0
+  spawn_treehouse_get() {
+    allocation_attempt=$((allocation_attempt + 1))
+    allocation_frame="${allocation_token}_${allocation_attempt}"
+    if [ "$BACKEND" = paseo ]; then
+      # Durable allocation has a provider-enforced compare-and-return token.
+      # Reuse the path-only lease API already used by fm-home-seed.sh, keeping
+      # the command in the created terminal and its stderr in backend capture.
+      allocation_holder=$(fm_treehouse_task_lease_holder "$ID" "$FM_HOME" "$SPAWN_GEN") || return 1
+      spawn_send_text_line "$WT_TARGET" "printf '%s\\n' '${allocation_frame}_BEGIN'; _fm_copy=\$(treehouse get --lease --lease-holder $(shell_quote "$allocation_holder")); _fm_get_rc=\$?; if [ \"\$_fm_get_rc\" -eq 0 ]; then cd -- \"\$_fm_copy\"; else printf '%s\\n' \"\$_fm_copy\"; fi; printf '%s%s\\n' '${allocation_frame}_END:' \"\$_fm_get_rc\""
+    else
+      spawn_send_text_line "$WT_TARGET" "printf '%s\\n' '${allocation_frame}_BEGIN'; treehouse get; printf '%s%s\\n' '${allocation_frame}_END:' \"\$?\""
+    fi
+  }
+  spawn_treehouse_pool_full() { # <framed command output>
+    # Captures can soft-wrap the allocator's line. The completed nonzero
+    # command frame is the authority; join wraps only for this classifier.
+    printf '%s' "$1" | tr -d '\r\n' | grep -Eq 'all [0-9]+ worktrees are in use or dirty \(max_trees = [0-9]+\)\.'
+  }
+  spawn_rollback_treehouse_endpoint() {
+    [ "$BACKEND" = paseo ] || return 0
+    # Only a fresh created terminal with a completed failed allocation in the
+    # project cwd may be closed; acquired/unlanded copies stay untouched.
+    rollback_path=$(spawn_current_path "$WT_TARGET" || true)
+    if [ -n "$rollback_path" ] && [ "$(real_path_or_raw "$rollback_path")" = "$PROJ_ABS_REAL" ] && \
+       fm_backend_paseo_rollback_created "$T" "$W"; then
+      echo "spawn: closed the terminal created for failed Treehouse allocation" >&2
+    else
+      echo "error: could not prove cleanup of created endpoint $T; endpoint retained for inspection" >&2
+    fi
+  }
+  spawn_treehouse_get || exit 1
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
   # Target the stable window id, not the name: if the name is ever lost (e.g. an
@@ -4376,6 +4439,50 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   last_seen=""
   last_reason="the pane reported no path"
   for _ in $(seq 1 60); do
+    allocation_capture=$(fm_backend_capture "$BACKEND" "$WT_TARGET" 300 "$W" || true)
+    allocation_error=$(printf '%s\n' "$allocation_capture" | awk -v begin="${allocation_frame}_BEGIN" -v end="${allocation_frame}_END:" '
+      $0 == begin { active=1; text=""; next }
+      active && index($0, end) == 1 && substr($0, length(end)+1) ~ /^[0-9]+$/ {
+        if (substr($0, length(end)+1)+0 != 0) {
+          if (text != "") printf "%s", text
+          else printf "error: treehouse get exited with status %s\n", substr($0, length(end)+1)
+        }
+        active=0; next
+      }
+      active { text=text $0 "\n" }
+    ')
+    if [ -n "$allocation_error" ]; then
+      if [ "$allocation_attempt" = 1 ] && spawn_treehouse_pool_full "$allocation_error"; then
+        # The return owner takes the same project lock. Release ours while it
+        # inspects recorded direct reports, then reacquire before retrying.
+        SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
+        fm_lock_release "$SPAWN_TREEHOUSE_PROJECT_LOCK" || {
+          printf '%s\n' "$allocation_error" >&2
+          spawn_rollback_treehouse_endpoint
+          exit 1
+        }
+        recovered=0
+        fm_run_timed 80 env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
+          "$SCRIPT_DIR/fm-treehouse-recover.sh" pool "$PROJ_ABS" && recovered=1
+        fm_lock_try_acquire "$SPAWN_TREEHOUSE_PROJECT_LOCK" || {
+          printf '%s\n' "$allocation_error" >&2
+          echo "error: Treehouse recovery finished but another allocation holds the project lock; refusing to race it" >&2
+          spawn_rollback_treehouse_endpoint
+          exit 1
+        }
+        SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
+        if [ "$recovered" = 1 ]; then
+          spawn_treehouse_get || exit 1
+          continue
+        fi
+      fi
+      printf '%s\n' "$allocation_error" >&2
+      if spawn_treehouse_pool_full "$allocation_error"; then
+        echo "The pool remains full after bounded recovery; you can explicitly raise max_trees in treehouse.toml." >&2
+      fi
+      spawn_rollback_treehouse_endpoint
+      exit 1
+    fi
     p=$(spawn_current_path "$WT_TARGET" || true)
     [ -z "$p" ] || last_seen="$p"
     if [ -n "$p" ] && spawn_worktree_isolated "$p"; then
@@ -4399,23 +4506,24 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
 
   validate_spawn_worktree "treehouse get" "$T"
 
-  # Claim the pool slot for this task. The interactive `treehouse get` sent to
-  # the pane above records only a process lease (Treehouse's durable
-  # `get --lease --lease-holder`, which bin/fm-home-seed.sh uses for secondmate
-  # homes, is not this path), so Treehouse cannot say which task a slot belongs
-  # to once that task's worker exits - and that is exactly when the slot is
-  # handed on and this task's worktree= line goes stale. The claim is what lets
-  # bin/fm-teardown.sh leave a slot that has since been reassigned untouched, so
-  # a slot that cannot be claimed is refused here, at the cheapest point, rather
-  # than launching a worker whose slot teardown could later release out from
-  # under its successor.
+  # Claim the native allocation for this task incarnation. Paseo uses a durable
+  # task lease; other session backends retain process allocation. The slot-owner
+  # helper owns the identity format used by teardown and copy-only recovery.
   # Written under the Treehouse project lock held from before slot allocation
   # through metadata publication, so no other spawn or return sees a half-claim.
+  if [ "$BACKEND" = paseo ]; then
+    if ! fm_treehouse_pool_slot "$PROJ_ABS" "$WT" || \
+      [ "$(fm_treehouse_slot_native_holder "$WT")" != "$allocation_holder" ]; then
+        echo "error: could not prove the acquired Paseo task lease belongs to $ID; copy and endpoint retained for inspection" >&2
+        exit 1
+    fi
+  fi
   if fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
-    if ! fm_treehouse_slot_owner_claim "$WT" "$ID" "$FM_HOME"; then
+    if ! fm_treehouse_slot_owner_claim "$WT" "$ID" "$FM_HOME" "$SPAWN_GEN"; then
       echo "error: could not claim Treehouse pool slot $WT for task $ID; refusing to launch a worker whose slot cannot later be proved to be its own; inspect window $T" >&2
       exit 1
     fi
+    [ "$BACKEND" != paseo ] || SPAWN_LEASE_GEN=$SPAWN_GEN
     SPAWN_SLOT_CLAIMED=1
   fi
 fi
@@ -4962,7 +5070,30 @@ fi
 
 META_WINDOW=$T
 [ "$BACKEND" = orca ] && META_WINDOW=$W
-SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
+if [ "$RELAUNCH" -eq 1 ] && [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ] && \
+   fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
+  # A relaunch publishes a new incarnation of the same retained copy. Refresh
+  # its claim under the project lock, held only for this refresh and waited
+  # for within a bound; never steal another task's pool slot.
+  SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || {
+    echo "error: could not resolve the shared Treehouse project lock for $PROJ_ABS" >&2
+    exit 1
+  }
+  fm_lock_acquire_wait_max "$SPAWN_TREEHOUSE_PROJECT_LOCK" 60 || {
+    echo "error: another Treehouse slot allocation or return held the project lock for $PROJ_ABS past 60s; refusing relaunch" >&2
+    exit 1
+  }
+  SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
+  fm_treehouse_slot_owner_state "$WT" "$ID"
+  case "$FM_TREEHOUSE_SLOT_OWNER" in
+    mine|absent) ;;
+    *) echo "error: task $ID's copy has an incompatible slot claim; refusing relaunch" >&2; exit 1 ;;
+  esac
+  fm_treehouse_slot_owner_claim "$WT" "$ID" "$FM_HOME" "$SPAWN_GEN" \
+    "$(fm_meta_get "$RELAUNCH_META" lease_gen)" || exit 1
+  SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
+  fm_lock_release "$SPAWN_TREEHOUSE_PROJECT_LOCK"
+fi
 SPAWN_META_PATH="$STATE/$ID.meta"
 if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
   SPAWN_META_LOCK=$(fm_meta_lock_path "$STATE/$ID.meta") || exit 1
@@ -5005,6 +5136,7 @@ preserve_relaunch_meta() {
   [ -z "$WORKER_ACCOUNT_PROVIDER" ] || echo "account_provider=$WORKER_ACCOUNT_PROVIDER"
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
+  [ -z "$SPAWN_LEASE_GEN" ] || echo "lease_gen=$SPAWN_LEASE_GEN"
   # Default-off writes no traceparent= line.
   # backend= is written only for a non-default (non-tmux) backend, so the
   # default path's meta stays byte-identical (absent backend= means tmux;

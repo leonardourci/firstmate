@@ -2015,6 +2015,25 @@ tests/fm-backend-paseo-smoke.test.sh
 
 The real smoke proves daemon reachability, shared-workspace creation and adoption, sibling tabs without a second project, current-path probing, send and keys, bounded capture, tab-only kill, and guarded exact cleanup, mirroring the cmux smoke's shape against Paseo's own CLI surface.
 
+### Treehouse allocation and rollback guard
+
+The current guard requires explicit `FM_TREEHOUSE_PASEO_LIVE=1` and `FM_TREEHOUSE_PASEO_HOME` selecting an empty, separately started disposable daemon home; it refuses an occupied inventory and never starts a daemon itself.
+Run `FM_TREEHOUSE_PASEO_LIVE=1 FM_TREEHOUSE_PASEO_HOME=/path/to/disposable-daemon-home bash tests/fm-treehouse-paseo-live.test.sh` to refresh this evidence.
+Cleanup archives only the run's recorded created workspace after checking its physical directory, runs once, and keeps the project record.
+On 2026-10-13, the opt-in command above passed with Treehouse v2.3.0 and Paseo 0.10.3 against a separate disposable daemon home, repository, pool root, and test-owned terminals.
+The isolated daemon was already reachable; the guard did not start or restart it.
+The exact pass output was:
+
+```text
+ok - v2.3.0 / Paseo 0.10.3: actual pool-full text captured, early failure, exact created terminal closed and same-task retry permitted
+ok - v2.3.0 / Paseo 0.10.3: real terminal acquired durable task lease; stale return refused and exact conditional return succeeded
+```
+
+The guard exercises the full spawn failure through actual rendered backend capture, then verifies durable task allocation and conditional return after returning the test-owned copy.
+It spends no model tokens and capability-skips absent tools through `fm_live_gate`; an explicit live request fails on missing tools.
+Portable ownership, retained-work, interrupted-return, idempotence, pool retry, and inactive-reconciliation regressions run through `bash tests/fm-treehouse-recovery.test.sh`.
+The live guard does not establish why an arbitrary production slot was skipped, nor prove automatic recovery's pipeline classifier with a live validation run.
+
 ## Codex App host tools
 
 A reusable Desktop host-tool smoke ran on 2026-07-06 against Codex Desktop bundle version 26.623.101652, build 4674, bundle id `com.openai.codex`.
