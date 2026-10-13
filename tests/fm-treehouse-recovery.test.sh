@@ -116,6 +116,7 @@ SH
   cat > "$FB/lsof" <<'SH'
 #!/usr/bin/env bash
 if [ -f "$TEST_CASE/lsof-error" ]; then exit 1; fi
+if [ -f "$TEST_CASE/slow-lsof" ]; then delay=$(cat "$TEST_CASE/slow-lsof"); rm -f "$TEST_CASE/slow-lsof"; sleep "$delay"; fi
 if [ -f "$TEST_CASE/live-process" ]; then printf 'p123\nfcwd\nn%s\n' "$TEST_WORKTREE"; fi
 if [ -f "$TEST_CASE/open-file-process" ]; then printf 'p123\nf7\nn%s/file\n' "$TEST_WORKTREE"; fi
 SH
@@ -309,6 +310,23 @@ FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' PATH="$FB:$PATH" bash "$ROOT/bin/fm-inac
 assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" 'inactive reconciliation did not return copy'
 cmp "$CASE/backlog.before" "$HOME_DIR/data/backlog.md" || fail 'proactive reconciliation closed backlog'
 pass 'existing inactive reconciliation proactively returns dead copy without closing task'
+
+make_case small-budget
+echo 3 > "$CASE/slow-lsof"
+FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_INACTIVE_RECONCILE_BUDGET_SECS=1 PATH="$FB:$PATH" bash "$ROOT/bin/fm-inactive-reconcile.sh" scan --startup > "$CASE/output" 2>&1 || fail "small-budget reconciliation failed: $(cat "$CASE/output")"
+assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" 'recovery was cut down to the leftover scan budget'
+cmp "$CASE/backlog.before" "$HOME_DIR/data/backlog.md" || fail 'small-budget reconciliation closed backlog'
+pass 'copy recovery gets its own bound when the scan budget is nearly spent'
+
+make_case late-journal
+echo 20 > "$CASE/slow-lsof"
+if run_return > "$CASE/output" 2>&1; then fail 'slow safety checks still journaled a return'; fi
+assert_grep 'before journaling' "$CASE/output" 'late journal refused for another reason'
+assert_no_grep 'worktree_state=' "$HOME_DIR/state/dead.meta" 'late refusal wrote a return journal'
+assert_retained 'late-journal'
+run_return > "$CASE/output" 2>&1 || fail "retry after late refusal failed: $(cat "$CASE/output")"
+assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" 'retry after late refusal did not return copy'
+pass 'return refuses to journal once its checks used the time reserved for the native return'
 
 make_case preserved-outcome
 printf 'failed [at=1]: recorded failure\n' > "$HOME_DIR/state/dead.status"

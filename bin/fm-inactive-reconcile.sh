@@ -45,10 +45,12 @@
 # first due child of every scan is always visited with at least a one-second
 # state-read bound: whole-second arithmetic can otherwise round a small budget
 # to zero mid-scan, and an invocation that exits having visited nothing would
-# advance the durable cursor past a child it never examined. A process-group
-# kill one second after the budget remains as a backstop for a scan wedged in
-# an unbounded wait (for example a live-held wake-queue lock), so the clean
-# deadline path is not racing its own backstop.
+# advance the durable cursor past a child it never examined. Copy recovery for
+# a visited child gets its own fixed 50s bound rather than the leftover budget.
+# A process-group kill one second after the budget plus that bound remains as a
+# backstop for a scan wedged in an unbounded wait (for example a live-held
+# wake-queue lock), so neither the clean deadline path nor a journaled return
+# is racing it.
 #
 # It considers only a direct ordinary crewmate whose newest meta, status, or
 # turn-ended mtime is older than that interval and whose last status is not
@@ -132,6 +134,7 @@ if [ "$FM_INACTIVE_RECONCILE_BUDGET_SECS" -gt 30 ]; then
   printf 'fm-inactive-reconcile: FM_INACTIVE_RECONCILE_BUDGET_SECS must be a whole number from 1 to 30\n' >&2
   exit 2
 fi
+RECOVER_BOUND_SECS=50
 
 if [ "$(uname)" = Darwin ]; then
   file_mtime() { /usr/bin/stat -f %m "$1" 2>/dev/null; }
@@ -565,7 +568,7 @@ reconcile_direct_child() { # <id> <meta> <secondmate-id-or-empty> <timeout>
   # Preserve the existing outcome observation before clearing a live copy
   # identity. Recovery takes project/control/meta locks, so run it only after
   # releasing this reader's meta lock to avoid lock inversion.
-  fm_run_timed "$timeout" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+  fm_run_timed "$RECOVER_BOUND_SECS" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
     "$SCRIPT_DIR/fm-treehouse-recover.sh" task "$id" >&2 || true
   return "$rc"
 }
@@ -675,8 +678,9 @@ case "$mode" in
     # The scan's own whole-second deadline enforces the budget; this outer
     # process-group kill is only the backstop for a scan wedged outside every
     # bounded section (an unbounded lock wait), so it fires one second after
-    # the deadline instead of racing the clean bounded exit it exists to guard.
-    if fm_run_timed $((FM_INACTIVE_RECONCILE_BUDGET_SECS + 1)) "$0" _scan-locked "$startup"; then
+    # the deadline, plus the one copy recovery that may start before it,
+    # instead of racing the clean bounded exit it exists to guard.
+    if fm_run_timed $((FM_INACTIVE_RECONCILE_BUDGET_SECS + RECOVER_BOUND_SECS + 1)) "$0" _scan-locked "$startup"; then
       :
     elif [ "$?" -ne 124 ]; then
       exit 1

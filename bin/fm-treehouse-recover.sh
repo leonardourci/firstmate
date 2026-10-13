@@ -6,9 +6,12 @@
 # slot was released, authorizing one allocation retry. `task` is the existing
 # inactive-reconciliation hook. Neither path changes backlog or task outcomes.
 # Unavailable inventories are not death; retained-work diagnostics go to stderr.
-# Returns are bounded at 10s; pool intake starts at most 32 record reads before
-# its 30s deadline (spawn bounds the whole attempt at 30s). Locks, positive generation claims, work safety, process and pipeline
-# proofs, return journal and idempotence all belong to fm-teardown.sh.
+# Returns are bounded at 40s; teardown journals only within its first 20s, so
+# the bound leaves the native return and receipt the rest. Pool intake starts
+# at most 32 record reads before its 30s deadline (spawn bounds the whole
+# attempt at 80s, room for one return started just before that deadline).
+# Locks, positive generation claims, work safety, process and pipeline proofs,
+# return journal and idempotence all belong to fm-teardown.sh.
 set -eu
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_HOME=${FM_HOME:-${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}
@@ -46,7 +49,7 @@ recover_task() { # <id> [pool-path-list]
     alive) return 1 ;;
     *) echo "recovery: $id endpoint absence is unproved; copy retained" >&2; return 1 ;;
   esac
-  if out=$(fm_run_timed 10 env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+  if out=$(fm_run_timed 40 env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
       "$SCRIPT_DIR/fm-teardown.sh" "$id" --return-copy 2>&1); then
     printf '%s\n' "$out" >&2
     printf '%s\n' "$out" | grep -F "copy-return: released $id;" >/dev/null

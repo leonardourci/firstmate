@@ -3093,7 +3093,7 @@ else
   WT=""
   BRIEF="$DATA/$ID/brief.md"
 fi
-if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || {
     echo "error: could not resolve the shared Treehouse project lock for $PROJ_ABS" >&2
     exit 1
@@ -4461,7 +4461,7 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
           exit 1
         }
         recovered=0
-        fm_run_timed 30 env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
+        fm_run_timed 80 env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
           "$SCRIPT_DIR/fm-treehouse-recover.sh" pool "$PROJ_ABS" && recovered=1
         fm_lock_try_acquire "$SPAWN_TREEHOUSE_PROJECT_LOCK" || {
           printf '%s\n' "$allocation_error" >&2
@@ -5072,7 +5072,17 @@ META_WINDOW=$T
 if [ "$RELAUNCH" -eq 1 ] && [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ] && \
    fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
   # A relaunch publishes a new incarnation of the same retained copy. Refresh
-  # its claim under the project lock; never steal another task's pool slot.
+  # its claim under the project lock, held only for this refresh and waited
+  # for within a bound; never steal another task's pool slot.
+  SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || {
+    echo "error: could not resolve the shared Treehouse project lock for $PROJ_ABS" >&2
+    exit 1
+  }
+  fm_lock_acquire_wait_max "$SPAWN_TREEHOUSE_PROJECT_LOCK" 60 || {
+    echo "error: another Treehouse slot allocation or return held the project lock for $PROJ_ABS past 60s; refusing relaunch" >&2
+    exit 1
+  }
+  SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
   fm_treehouse_slot_owner_state "$WT" "$ID"
   case "$FM_TREEHOUSE_SLOT_OWNER" in
     mine|absent) ;;
@@ -5080,6 +5090,8 @@ if [ "$RELAUNCH" -eq 1 ] && [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ] 
   esac
   fm_treehouse_slot_owner_claim "$WT" "$ID" "$FM_HOME" "$SPAWN_GEN" \
     "$(fm_meta_get "$RELAUNCH_META" lease_gen)" || exit 1
+  SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
+  fm_lock_release "$SPAWN_TREEHOUSE_PROJECT_LOCK"
 fi
 SPAWN_META_PATH="$STATE/$ID.meta"
 if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then

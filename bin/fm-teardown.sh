@@ -190,6 +190,9 @@
 #     returned_worktree/head/branch/native_owner preserve evidence.
 #     worktree_state=returning
 #     is a fail-closed journal before return; returned is the success receipt.
+#     The journal is written only within the first 20s of this process, so
+#     its caller's 40s bound leaves the native return and receipt their own
+#     time instead of cutting them off mid-journal.
 #     A partial return requires operator reconciliation, never an automatic
 #     second return against a slot that could already have a new owner.
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
@@ -3545,6 +3548,9 @@ return_dead_task_copy() {
   [ "$(fm_backend_meta_exact_value "$marker" lease_gen)" = "$lease_gen" ] && \
     [ "$(fm_treehouse_slot_native_identity "$WT")" = "$native" ] && \
     [ "$(fm_treehouse_slot_native_holder "$WT")" = "$(fm_treehouse_task_lease_holder "$ID" "$FM_HOME" "$lease_gen")" ] || return 1
+  [ "$SECONDS" -lt 20 ] || {
+    echo "REFUSED: $ID's safety checks used the recovery time before journaling; copy retained" >&2; return 1;
+  }
   tmp="$META.return-copy.${BASHPID:-$$}"
   out=$(git -C "$WT" rev-parse HEAD) || return 1
   awk '$0 !~ /^(worktree|worktree_state|returned_worktree|returned_head|returned_branch|returned_native_owner)=/' "$META" > "$tmp" || return 1
