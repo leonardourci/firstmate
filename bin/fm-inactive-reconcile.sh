@@ -48,8 +48,9 @@
 # advance the durable cursor past a child it never examined. A process-group
 # kill one second after the budget remains as a backstop for a scan wedged in
 # an unbounded wait (for example a live-held wake-queue lock), so the clean
-# deadline path is not racing its own backstop. Copy recovery for each visited
-# child runs after the scan, outside that backstop, with its own fixed 50s
+# deadline path is not racing its own backstop. Copy recovery for each child
+# whose crew state this scan read and whose outcome it recorded runs after the
+# scan, outside that backstop, with its own fixed 50s
 # bound rather than the leftover budget; none starts after the first 50s.
 #
 # It considers only a direct ordinary crewmate whose newest meta, status, or
@@ -520,6 +521,7 @@ reconcile_direct_child_locked() { # <id> <meta> <secondmate-id-or-empty> <timeou
   state_line=$(fm_run_timed "$timeout" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CREW_STATE_NO_FORGE=1 \
     "$CREW_STATE_BIN" "$id" 2>/dev/null) || state_rc=$?
   [ "$state_rc" -ne 124 ] || return 3
+  [ "$state_rc" -ne 0 ] || OUTCOME_OBSERVED=1
   last=$(last_status_line "$status")
   if [ -n "$self" ]; then
     child_terminal_ledger_line "$status" >/dev/null
@@ -563,12 +565,16 @@ reconcile_direct_child() { # <id> <meta> <secondmate-id-or-empty> <timeout>
   local id=$1 meta=$2 self=${3:-} timeout=$4 lock rc=0
   lock=$(fm_meta_lock_path "$meta") || return 1
   fm_lock_acquire_wait "$lock" || return 1
+  OUTCOME_OBSERVED=0
   reconcile_direct_child_locked "$id" "$meta" "$self" "$timeout" || rc=$?
   fm_lock_release "$lock"
-  # Preserve the existing outcome observation before clearing a live copy
-  # identity. Recovery takes project/control/meta locks, so the outer scan runs
-  # it after this reader's locks are released, outside the scan backstop.
-  printf '%s\n' "$id" >> "${FM_INACTIVE_RECOVER_LIST:-/dev/null}" || true
+  # Only a child past the age gate whose crew state was read and whose outcome
+  # was recorded may lose its live copy identity. Recovery takes
+  # project/control/meta locks, so the outer scan runs it after this reader's
+  # locks are released, outside the scan backstop.
+  if [ "$rc" -eq 0 ] && [ "$OUTCOME_OBSERVED" -eq 1 ]; then
+    printf '%s\n' "$id" >> "${FM_INACTIVE_RECOVER_LIST:-/dev/null}" || true
+  fi
   return "$rc"
 }
 

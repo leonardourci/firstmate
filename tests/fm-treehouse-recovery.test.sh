@@ -306,6 +306,7 @@ cmp "$CASE/backlog.before" "$HOME_DIR/data/backlog.md" || fail 'pool-full recove
 pass 'wrapped pool-full error reclaims only safe matching copy and retries successfully'
 
 make_case proactive
+touch -t 200001010000 "$HOME_DIR/state/dead.meta" "$HOME_DIR/state/dead.status"
 FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' PATH="$FB:$PATH" bash "$ROOT/bin/fm-inactive-reconcile.sh" scan --startup > "$CASE/output" 2>&1 || fail "proactive reconciliation failed: $(cat "$CASE/output")"
 assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" 'inactive reconciliation did not return copy'
 cmp "$CASE/backlog.before" "$HOME_DIR/data/backlog.md" || fail 'proactive reconciliation closed backlog'
@@ -313,6 +314,7 @@ pass 'existing inactive reconciliation proactively returns dead copy without clo
 
 make_case small-budget
 echo 3 > "$CASE/slow-lsof"
+touch -t 200001010000 "$HOME_DIR/state/dead.meta" "$HOME_DIR/state/dead.status"
 FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_INACTIVE_RECONCILE_BUDGET_SECS=1 PATH="$FB:$PATH" bash "$ROOT/bin/fm-inactive-reconcile.sh" scan --startup > "$CASE/output" 2>&1 || fail "small-budget reconciliation failed: $(cat "$CASE/output")"
 assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" 'recovery was cut down to the leftover scan budget'
 cmp "$CASE/backlog.before" "$HOME_DIR/data/backlog.md" || fail 'small-budget reconciliation closed backlog'
@@ -349,6 +351,48 @@ for receipt in "$HOME_DIR/state/terminal-outcomes"/*.pending; do [ ! -f "$receip
 [ "$count" = 1 ] || fail 'copy return suppressed existing outcome observation'
 assert_grep 'recorded failure' "$HOME_DIR/state/dead.status" 'historical outcome lost'
 pass 'existing outcome is recorded before copy identity is cleared'
+
+outcome_receipts() {
+  count=0
+  for receipt in "$HOME_DIR/state/terminal-outcomes"/*.pending; do [ ! -f "$receipt" ] || count=$((count + 1)); done
+  echo "$count"
+}
+
+make_case recent-outcome
+printf 'done [at=1]: recent done\n' > "$HOME_DIR/state/dead.status"
+sed 's/failed source=status-log detail=recorded failure/done source=status-log detail=recent done/' "$TMP_ROOT/preserved-outcome/fakebin/observed-state" > "$FB/observed-state"
+chmod +x "$FB/observed-state"
+FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_INACTIVE_CREW_STATE_BIN="$FB/observed-state" PATH="$FB:$PATH" bash "$ROOT/bin/fm-inactive-reconcile.sh" scan --startup > "$CASE/output" 2>&1 || fail "recent-outcome reconciliation failed: $(cat "$CASE/output")"
+assert_retained 'recently active outcome'
+[ "$(outcome_receipts)" = 0 ] || fail 'recently active outcome recorded before the age gate'
+touch -t 200001010000 "$HOME_DIR/state/dead.meta" "$HOME_DIR/state/dead.status"
+FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_INACTIVE_CREW_STATE_BIN="$FB/observed-state" PATH="$FB:$PATH" bash "$ROOT/bin/fm-inactive-reconcile.sh" scan --startup > "$CASE/output" 2>&1 || fail "eligible reconciliation failed: $(cat "$CASE/output")"
+assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" 'eligible outcome did not return copy'
+[ "$(outcome_receipts)" = 1 ] || fail 'recently active done outcome lost by copy return'
+pass 'recently active outcome keeps its copy until reconciliation records the outcome'
+
+make_case timed-out-observation
+printf 'failed [at=1]: slow failure\n' > "$HOME_DIR/state/dead.status"
+touch -t 200001010000 "$HOME_DIR/state/dead.meta" "$HOME_DIR/state/dead.status"
+cat > "$FB/observed-state" <<'SH'
+#!/usr/bin/env bash
+[ ! -f "$TEST_CASE/slow-state" ] || sleep 5
+if grep -q '^worktree=$' "$FM_HOME/state/dead.meta"; then
+  echo 'state: unknown source=none detail=copy returned'
+else
+  echo 'state: failed source=status-log detail=slow failure'
+fi
+SH
+chmod +x "$FB/observed-state"
+touch "$CASE/slow-state"
+FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_INACTIVE_RECONCILE_BUDGET_SECS=1 FM_INACTIVE_CREW_STATE_BIN="$FB/observed-state" PATH="$FB:$PATH" bash "$ROOT/bin/fm-inactive-reconcile.sh" scan --startup > "$CASE/output" 2>&1 || true
+assert_retained 'timed-out crew-state observation'
+[ "$(outcome_receipts)" = 0 ] || fail 'timed-out observation recorded an outcome'
+rm -f "$CASE/slow-state"
+FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_INACTIVE_CREW_STATE_BIN="$FB/observed-state" PATH="$FB:$PATH" bash "$ROOT/bin/fm-inactive-reconcile.sh" scan --startup > "$CASE/output" 2>&1 || fail "observed reconciliation failed: $(cat "$CASE/output")"
+assert_grep 'worktree_state=returned' "$HOME_DIR/state/dead.meta" 'observed outcome did not return copy'
+[ "$(outcome_receipts)" = 1 ] || fail 'failed outcome lost after timed-out observation'
+pass 'timed-out crew-state observation keeps its copy until a later read records the outcome'
 
 make_case decisions
 printf 'needs-decision [at=1] [key=review-call]: retained question\n' > "$HOME_DIR/state/dead.status"
