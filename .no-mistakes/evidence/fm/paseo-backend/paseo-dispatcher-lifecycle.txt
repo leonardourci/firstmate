@@ -1,0 +1,21 @@
+### A: firstmate outside Paseo -> shared per-project workspace; full dispatcher lifecycle
+  sidebar: workspaces=["decoy"] projects=1 terminals=0
+  workspace title: firstmate
+  target_exists(fm-life1)=yes
+  target_exists(fm-other)=no
+  composer_state(empty prompt)=unknown
+  composer_state(typed, unsent)=unknown
+  send_text_submit -> rc=0 'unknown'
+  capture shows command output: yes
+  sidebar: workspaces=["firstmate","decoy"] projects=2 terminals=1
+  after kill of last tab:
+  sidebar: workspaces=["decoy"] projects=1 terminals=0
+### B: tab closed outside firstmate (captain closed it), then teardown kill
+  sidebar: workspaces=["firstmate","decoy"] projects=2 terminals=0
+  kill rc=0
+  sidebar: workspaces=["decoy"] projects=1 terminals=0
+### C: firstmate inside a Paseo tab (PASEO_WORKSPACE_ID = an existing workspace) -> task tab in that workspace, never archived
+  task tab opened in firstmate's own workspace: yes
+  sidebar: workspaces=["decoy"] projects=1 terminals=1
+  own workspace still present after kill: true
+  sidebar: workspaces=["decoy"] projects=1 terminals=0

@@ -1,0 +1,21 @@
+scenario                                         | base                   | HEAD                  
+clean env, no markers                            | tmux/spawn-ok          | tmux/spawn-ok         
+Paseo markers only                               | tmux/spawn-ok          | tmux/spawn-ok         
+Paseo markers + TMUX                             | tmux/spawn-ok          | tmux/spawn-ok         
+Paseo markers + HERDR_ENV=1                      | herdr/spawn-ok         | herdr/spawn-ok        
+Paseo markers + CMUX_WORKSPACE_ID                | cmux/spawn-ok          | cmux/spawn-ok         
+TMUX marker                                      | tmux/spawn-ok          | tmux/spawn-ok         
+HERDR_ENV=1                                      | herdr/spawn-ok         | herdr/spawn-ok        
+CMUX_WORKSPACE_ID                                | cmux/spawn-ok          | cmux/spawn-ok         
+FM_BACKEND=tmux                                  | tmux/spawn-ok          | tmux/spawn-ok         
+FM_BACKEND=herdr                                 | herdr/spawn-ok         | herdr/spawn-ok        
+FM_BACKEND=zellij                                | zellij/spawn-ok        | zellij/spawn-ok       
+FM_BACKEND=orca                                  | orca/spawn-ok          | orca/spawn-ok         
+FM_BACKEND=cmux                                  | cmux/spawn-ok          | cmux/spawn-ok         
+FM_BACKEND=paseo                                 | paseo/refused          | paseo/spawn-ok        
+FM_BACKEND=codex-app                             | codex-app/refused      | codex-app/refused     
+FM_BACKEND=bogus                                 | bogus/refused          | bogus/refused         
+FM_BACKEND=tmux + Paseo markers                  | tmux/spawn-ok          | tmux/spawn-ok         
+config/backend=paseo                             | paseo/refused          | paseo/spawn-ok        
+config/backend=paseo + TMUX                      | paseo/refused          | paseo/spawn-ok        
+config/backend=tmux + Paseo markers              | tmux/spawn-ok          | tmux/spawn-ok         

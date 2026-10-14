@@ -1,0 +1,14 @@
+### fm-spawn.sh --secondmate with FM_BACKEND=paseo (real fm-spawn, lab home)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home <lab>
+error: backend=paseo does not support --secondmate spawns yet
+  rc=1
+### same, via config/backend=paseo
+fm-gate-refuse: gate agent lifecycle permitted only against lab home <lab>
+error: backend=paseo does not support --secondmate spawns yet
+  rc=1
+  lab Paseo after both: terminals=0 workspaces=["decoy"]
+### unreadable workspace inventory (daemon unreachable) -> create_task refuses, creates nothing
+  daemon_state=down
+error: could not read the paseo terminal inventory; refusing to create 'fm-firstmate-f906e8ee-life5'
+  create_task rc=1
+  unreachable daemon still stopped: stopped

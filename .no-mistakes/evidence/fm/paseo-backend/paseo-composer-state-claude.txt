@@ -1,0 +1,8 @@
+### composer state against a real Claude Code composer in a Paseo tab (private daemon)
+  row: ❯ Try "fix lint errors"
+  composer_state=unknown
+  row: ❯ captain draft not sent
+  composer_state=unknown
+  after send_key C-u -> row: ❯ Try "fix lint errors"
+  composer_state=unknown
+  after kill: workspaces=["decoy"] projects=1 terminals=0

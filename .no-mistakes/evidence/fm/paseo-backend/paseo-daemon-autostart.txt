@@ -1,0 +1,6 @@
+## adapter starts a stopped (private, isolated-home) Paseo daemon
+before: lab daemon=stopped
+daemon_state before: down
+container_ensure rc=0
+daemon_state after: ok
+after: lab daemon=running listen=127.0.0.1:16767
