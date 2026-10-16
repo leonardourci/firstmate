@@ -1,0 +1,91 @@
+========== S1: spawn ship task, --backend paseo, forge=external project
+$ fm-spawn.sh paseo-ext-r1 <project> --backend paseo --mode direct-PR --yolo off
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as
+spawned paseo-ext-r1 harness=codex kind=ship mode=direct-PR yolo=off window=d12bef59-64e6-48ca-bc6b-d25981a37556:wks_df75d4d1 worktree=/private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as/pool
+### exit=0
+--- state/paseo-ext-r1.meta:
+window=d12bef59-64e6-48ca-bc6b-d25981a37556:wks_df75d4d1
+endpoint_task_id=paseo-ext-r1
+worktree=/private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as/pool
+project=/private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as/projects/project
+harness=codex
+kind=ship
+mode=direct-PR
+yolo=off
+branch=fm/paseo-ext-r1
+tasktmp=/tmp/fm-paseo-ext-r1
+forge=external
+backup_remote=backup
+backup_prefix=backup/
+model=default
+effort=default
+spawn_gen=s1792149629.15146.430
+backend=paseo
+paseo_terminal_id=d12bef59-64e6-48ca-bc6b-d25981a37556
+paseo_workspace_id=wks_df75d4d1
+--- push guard hook: applypatch-msg commit-msg fm-push-guard post-applypatch post-checkout post-commit post-merge post-rewrite pre-applypatch pre-auto-gc pre-commit pre-merge-commit pre-push pre-rebase prepare-commit-msg sendemail-validate 
+--- fake paseo workspaces: [{"workspaceId":"wks_df75d4d1","name":"firstmate","cwd":"/private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as/projects/project"}]
+--- fake paseo terminals: [{"id":"d12bef59-64e6-48ca-bc6b-d25981a37556","workspaceId":"wks_df75d4d1","name":"fm-firstmate-c4a7119c-paseo-ext-r1","cwd":"/private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as/projects/project"}]
+
+========== S2: peek + send route through the paseo adapter
+$ fm-peek.sh paseo-ext-r1
+$ 
+__FM_PASEO_CWD_BEGIN__
+/private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as/pool
+__FM_PASEO_CWD_END__
+$ ### exit=0
+$ fm-send.sh paseo-ext-r1 'hello from captain'
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as
+### exit=0
+--- paseo send-keys received:
+-l -- : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'paseo-ext-r1.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.
+Enter
+
+========== S3: relaunch on paseo refuses, record untouched
+$ fm-spawn.sh paseo-ext-r1 --relaunch
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as
+error: backend 'paseo' has no recovery-grade agent-state classifier, so a relaunch cannot prove the previous agent exited; refusing rather than risking two agents in one endpoint
+### exit=1
+$ fm-control.sh paseo-ext-r1 relaunch
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as
+error: task paseo-ext-r1 runs on the paseo backend, which has no recovery-grade agent-state classifier, so 'relaunch' cannot prove the agent actually stopped; refusing rather than reporting an unproven transition as done
+### exit=1
+--- meta byte-identical after refused relaunches (forge + paseo keys intact)
+
+========== S4: --secondmate --backend paseo refuses
+$ fm-spawn.sh sm-x --secondmate --backend paseo
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as
+error: backend=paseo does not support --secondmate spawns yet
+### exit=1
+--- secondmate meta exists? no
+
+========== S5: inherited PASEO_* markers never auto-select paseo
+$ PASEO_WORKSPACE_ID=wks_inherited PASEO_AGENT_ID=agent1 fm-spawn.sh autodetect-r1 <project> --scout
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as
+spawned autodetect-r1 harness=codex kind=scout window=firstmate:fm-autodetect-r1 worktree=/private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as/pool
+### exit=0
+--- autodetect-r1 meta backend line: (none => tmux)
+--- paseo CLI calls during this spawn (read-only inventory of the OTHER, paseo task's endpoint; no create):
+terminal ls --all --json 
+terminal ls --all --json 
+terminal capture d12bef59-64e6-48ca-bc6b-d25981a37556 -S --json 
+terminal ls --all --json 
+terminal capture d12bef59-64e6-48ca-bc6b-d25981a37556 -S --json 
+
+========== S6: teardown kills the paseo tab and retires the home-clone workspace
+$ fm-teardown.sh paseo-ext-r1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as
+project: already current
+teardown paseo-ext-r1 complete (window d12bef59-64e6-48ca-bc6b-d25981a37556:wks_df75d4d1, worktree /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as/pool)
+Backlog: paseo-ext-r1 just finished (this home keeps no markdown backlog at /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as/data/backlog.md). Update /private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as/data/backlog.md - move paseo-ext-r1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+### exit=0
+--- events: killed d12bef59-64e6-48ca-bc6b-d25981a37556;archived wks_df75d4d1;project-delete prj_0;
+--- remaining terminals: []  workspaces: []
+--- fake paseo projects left: [
+  {
+    "projectId": "prj_0",
+    "path": "/private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as/projects/project"
+  }
+]
+LAB=/private/var/folders/dk/gjs9w08x5t1gnzcr76mr2yrh0000gn/T/fm-lab.ucc0as
+lab removed: yes
