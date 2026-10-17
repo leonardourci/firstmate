@@ -1,0 +1,5 @@
+$ ambient Paseo markers, no explicit selection -> fm_backend_name
+tmux$ FM_BACKEND=paseo -> fm_backend_name
+paseo$ FM_BACKEND=bogus -> fm_backend_validate
+error: unknown backend 'bogus' (known: tmux herdr zellij orca cmux paseo)
+rc=1
